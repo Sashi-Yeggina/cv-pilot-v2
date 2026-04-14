@@ -10,6 +10,8 @@ build/
 .eggs/
 .mypy_cache/
 .ruff_cache/
+.docs/
+
 
 # ── Virtual environments ───────────────────────────────────────────────────────
 .venv/
