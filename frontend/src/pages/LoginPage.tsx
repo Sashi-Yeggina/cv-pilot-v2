@@ -36,8 +36,14 @@ export default function LoginPage() {
       toast.success('Logged in successfully!');
       navigate('/dashboard');
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'Login failed';
-      toast.error(message);
+      const detail = error.response?.data?.detail || '';
+      if (detail === 'email_not_confirmed' || detail.toLowerCase().includes('not confirmed')) {
+        toast.error('Please confirm your email before signing in.', { duration: 5000 });
+        // Send them to the verify page so they can resend the confirmation
+        navigate('/verify-email', { state: { email: identifier } });
+      } else {
+        toast.error(detail || 'Login failed — check your email/password and try again.');
+      }
     } finally {
       setLoading(false);
     }

@@ -133,8 +133,12 @@ async def login_user(email: str, password: str):
             "role": role
         }
     except Exception as e:
-        print(f"Login error: {e}")
-        return {"error": str(e)}
+        err_str = str(e)
+        print(f"Login error: {err_str}")
+        # Surface a friendly message for unconfirmed emails
+        if "email not confirmed" in err_str.lower() or "Email not confirmed" in err_str:
+            return {"error": "email_not_confirmed"}
+        return {"error": err_str}
 
 def verify_token(token: str):
     """Verify JWT token and get user"""

@@ -11,41 +11,40 @@ import SubmissionsPage from './pages/SubmissionsPage';
 import BulkGeneratePage from './pages/BulkGeneratePage';
 import './App.css';
 
-function App() {
-  const { token, role } = useAuthStore();
+// ProtectedRoute checks auth at render time, not at route-definition time.
+// This prevents the "blink back to login" caused by conditional route definitions.
+function ProtectedRoute({ children }: { children: JSX.Element }) {
+  const { token } = useAuthStore();
+  return token ? children : <Navigate to="/login" replace />;
+}
 
+function AdminRoute({ children }: { children: JSX.Element }) {
+  const { token, role } = useAuthStore();
+  if (!token) return <Navigate to="/login" replace />;
+  if (role !== 'admin') return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
+function App() {
   return (
     <Router>
       <Routes>
         {/* Public Routes */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/login"        element={<LoginPage />} />
+        <Route path="/register"     element={<RegisterPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
 
-        {/* Protected Routes */}
-        {token ? (
-          <>
-            <Route path="/dashboard"     element={<DashboardPage />} />
-            <Route path="/generate"      element={<GeneratePage />} />
-            <Route path="/bulk-generate" element={<BulkGeneratePage />} />
-            <Route path="/submissions"   element={<SubmissionsPage />} />
+        {/* Protected Routes — always defined, guard is inside the component */}
+        <Route path="/dashboard"     element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/generate"      element={<ProtectedRoute><GeneratePage /></ProtectedRoute>} />
+        <Route path="/bulk-generate" element={<ProtectedRoute><BulkGeneratePage /></ProtectedRoute>} />
+        <Route path="/submissions"   element={<ProtectedRoute><SubmissionsPage /></ProtectedRoute>} />
+        <Route path="/admin"         element={<AdminRoute><AdminPage /></AdminRoute>} />
 
-            {/* Admin Routes */}
-            {role === 'admin' && (
-              <Route path="/admin" element={<AdminPage />} />
-            )}
-
-            {/* Default redirect */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="*" element={<Navigate to="/dashboard" replace />} />
-          </>
-        ) : (
-          <>
-            <Route path="/"  element={<Navigate to="/login" replace />} />
-            <Route path="*"  element={<Navigate to="/login" replace />} />
-          </>
-        )}
+        {/* Default redirects */}
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Router>
   );
