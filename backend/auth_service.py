@@ -3,13 +3,32 @@ from config import settings
 from supabase import create_client
 import os
 
-supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+# Lazy load Supabase client to avoid import-time errors if credentials are missing
+_supabase = None
+
+def get_supabase():
+    """Get or create Supabase client (lazy loading)"""
+    global _supabase
+    if _supabase is None:
+        if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+            raise RuntimeError(
+                "Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_KEY in .env"
+            )
+        try:
+            _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to create Supabase client. Check your SUPABASE_URL and SUPABASE_KEY are valid.\n"
+                f"Error: {str(e)}"
+            )
+    return _supabase
 
 async def register_user(email: str, password: str, full_name: str):
     """Register new user via Supabase Auth"""
     try:
+        sb = get_supabase()
         # Create auth user
-        auth_response = supabase.auth.sign_up({
+        auth_response = sb.auth.sign_up({
             "email": email,
             "password": password
         })
@@ -20,7 +39,7 @@ async def register_user(email: str, password: str, full_name: str):
         user_id = auth_response.user.id
 
         # Create user profile in users table
-        supabase.table("users").insert({
+        sb.table("users").insert({
             "id": user_id,
             "email": email,
             "full_name": full_name,
@@ -41,7 +60,8 @@ async def register_user(email: str, password: str, full_name: str):
 async def login_user(email: str, password: str):
     """Login user via Supabase Auth"""
     try:
-        auth_response = supabase.auth.sign_in_with_password({
+        sb = get_supabase()
+        auth_response = sb.auth.sign_in_with_password({
             "email": email,
             "password": password
         })
@@ -50,7 +70,7 @@ async def login_user(email: str, password: str):
             return {"error": "Invalid credentials"}
 
         # Get user role
-        user_data = supabase.table("users").select("role").eq("id", auth_response.user.id).execute()
+        user_data = sb.table("users").select("role").eq("id", auth_response.user.id).execute()
         role = user_data.data[0]["role"] if user_data.data else "user"
 
         return {
@@ -67,7 +87,8 @@ async def login_user(email: str, password: str):
 def verify_token(token: str):
     """Verify JWT token and get user"""
     try:
-        user = supabase.auth.get_user(token)
+        sb = get_supabase()
+        user = sb.auth.get_user(token)
         return user
     except Exception as e:
         print(f"Token verification error: {e}")
@@ -76,7 +97,8 @@ def verify_token(token: str):
 def logout_user(token: str):
     """Logout user"""
     try:
-        supabase.auth.sign_out()
+        sb = get_supabase()
+        sb.auth.sign_out()
         return {"success": True}
     except Exception as e:
         print(f"Logout error: {e}")

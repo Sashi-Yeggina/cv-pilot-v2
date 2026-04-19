@@ -6,11 +6,25 @@ import json
 import hashlib
 from datetime import datetime
 
-# Initialize Supabase client
-supabase: Client = create_client(
-    settings.SUPABASE_URL,
-    settings.SUPABASE_KEY
-)
+# Lazy load Supabase client
+_supabase: Optional[Client] = None
+
+def get_supabase() -> Client:
+    """Get or create Supabase client (lazy loading)"""
+    global _supabase
+    if _supabase is None:
+        if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
+            raise RuntimeError(
+                "Missing Supabase credentials. Please check your .env file."
+            )
+        try:
+            _supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+        except Exception as e:
+            raise RuntimeError(f"Failed to create Supabase client: {str(e)}")
+    return _supabase
+
+# For backward compatibility in this module
+supabase = None  # Will be set to get_supabase() when functions are called
 
 # ════════════════════════════════════════════════════════════════
 # USERS
@@ -19,7 +33,8 @@ supabase: Client = create_client(
 def get_user(user_id: str) -> Optional[Dict]:
     """Get user by ID"""
     try:
-        response = supabase.table("users").select("*").eq("id", user_id).execute()
+        sb = get_supabase()
+        response = sb.table("users").select("*").eq("id", user_id).execute()
         return response.data[0] if response.data else None
     except Exception as e:
         print(f"Error getting user: {e}")
@@ -32,7 +47,7 @@ def get_user_model(user_id: str, default: str = "claude-haiku-4-5-20251001") -> 
     """
     try:
         response = (
-            supabase.table("users")
+            get_supabase().table("users")
             .select("allowed_model")
             .eq("id", user_id)
             .execute()
@@ -75,7 +90,7 @@ def update_user_model(
         previous_model = (current or {}).get("allowed_model")
 
         # Update users table
-        supabase.table("users").update({
+        get_supabase().table("users").update({
             "allowed_model":    new_model,
             "model_label":      MODEL_LABELS[new_model],
             "model_updated_at": datetime.utcnow().isoformat(),
@@ -83,7 +98,7 @@ def update_user_model(
         }).eq("id", user_id).execute()
 
         # Write audit row
-        supabase.table("model_change_log").insert({
+        get_supabase().table("model_change_log").insert({
             "user_id":        user_id,
             "changed_by":     admin_email,
             "previous_model": previous_model,
@@ -101,7 +116,7 @@ def get_model_change_history(user_id: str, limit: int = 20) -> List[Dict]:
     """Return the model change audit trail for a specific user."""
     try:
         response = (
-            supabase.table("model_change_log")
+            get_supabase().table("model_change_log")
             .select("*")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
@@ -123,7 +138,7 @@ def create_activity_log(
 ) -> bool:
     """Log user activity"""
     try:
-        supabase.table("activity_logs").insert({
+        get_supabase().table("activity_logs").insert({
             "user_id": user_id,
             "action_type": action_type,
             "description": description,
@@ -153,7 +168,7 @@ def create_cv(
 ) -> Optional[Dict]:
     """Create CV record in database"""
     try:
-        response = supabase.table("cvs").insert({
+        response = get_supabase().table("cvs").insert({
             "user_id": user_id,
             "filename": filename,
             "file_path": file_path,
@@ -172,7 +187,7 @@ def create_cv(
 def get_user_cvs(user_id: str, cv_type: Optional[str] = None) -> List[Dict]:
     """Get all CVs for a user"""
     try:
-        query = supabase.table("cvs").select("*").eq("user_id", user_id)
+        query = get_supabase().table("cvs").select("*").eq("user_id", user_id)
         if cv_type:
             query = query.eq("cv_type", cv_type)
         response = query.order("created_at", desc=True).execute()
@@ -184,7 +199,7 @@ def get_user_cvs(user_id: str, cv_type: Optional[str] = None) -> List[Dict]:
 def get_cv(cv_id: str, user_id: str) -> Optional[Dict]:
     """Get specific CV"""
     try:
-        response = supabase.table("cvs").select("*").eq("id", cv_id).eq("user_id", user_id).execute()
+        response = get_supabase().table("cvs").select("*").eq("id", cv_id).eq("user_id", user_id).execute()
         return response.data[0] if response.data else None
     except Exception as e:
         print(f"Error getting CV: {e}")
@@ -193,7 +208,7 @@ def get_cv(cv_id: str, user_id: str) -> Optional[Dict]:
 def delete_cv(cv_id: str, user_id: str) -> bool:
     """Delete CV (soft delete)"""
     try:
-        supabase.table("cvs").update({
+        get_supabase().table("cvs").update({
             "deleted_at": datetime.utcnow().isoformat()
         }).eq("id", cv_id).eq("user_id", user_id).execute()
         return True
@@ -224,7 +239,7 @@ def create_jd(
 ) -> Optional[Dict]:
     """Create job description record (v5: includes recruiter metadata + hash)."""
     try:
-        response = supabase.table("job_descriptions").insert({
+        response = get_supabase().table("job_descriptions").insert({
             "user_id":      user_id,
             "full_text":    full_text,
             "role_title":   role_title,
@@ -250,7 +265,7 @@ def check_jd_duplicate(jd_text: str, client_email: Optional[str] = None) -> Dict
     """
     try:
         jd_hash = _hash_jd(jd_text)
-        query   = supabase.table("job_descriptions").select(
+        query   = get_supabase().table("job_descriptions").select(
             "id, user_id, role_title, client_name, client_email, created_at"
         ).eq("jd_hash", jd_hash)
 
@@ -265,7 +280,7 @@ def check_jd_duplicate(jd_text: str, client_email: Optional[str] = None) -> Dict
 
         # Check if a successful generation was made for that JD
         gen_check = (
-            supabase.table("cv_generations")
+            get_supabase().table("cv_generations")
             .select("id")
             .eq("jd_id", match["id"])
             .eq("status", "success")
@@ -277,7 +292,7 @@ def check_jd_duplicate(jd_text: str, client_email: Optional[str] = None) -> Dict
         # Fetch the original user's email (anonymised — show domain only)
         original_user_email = "another user"
         try:
-            user_res = supabase.table("users").select("email").eq("id", match["user_id"]).single().execute()
+            user_res = get_supabase().table("users").select("email").eq("id", match["user_id"]).single().execute()
             email    = (user_res.data or {}).get("email", "")
             parts    = email.split("@")
             original_user_email = f"***@{parts[1]}" if len(parts) == 2 else "another user"
@@ -306,7 +321,7 @@ def check_jd_duplicate(jd_text: str, client_email: Optional[str] = None) -> Dict
 def get_user_jds(user_id: str) -> List[Dict]:
     """Get all JDs for a user"""
     try:
-        response = supabase.table("job_descriptions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+        response = get_supabase().table("job_descriptions").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
         return response.data or []
     except Exception as e:
         print(f"Error getting JDs: {e}")
@@ -315,7 +330,7 @@ def get_user_jds(user_id: str) -> List[Dict]:
 def get_jd(jd_id: str, user_id: str) -> Optional[Dict]:
     """Get specific JD"""
     try:
-        response = supabase.table("job_descriptions").select("*").eq("id", jd_id).eq("user_id", user_id).execute()
+        response = get_supabase().table("job_descriptions").select("*").eq("id", jd_id).eq("user_id", user_id).execute()
         return response.data[0] if response.data else None
     except Exception as e:
         print(f"Error getting JD: {e}")
@@ -345,7 +360,7 @@ def create_generation(
         }
         if bulk_job_id:
             payload["bulk_job_id"] = bulk_job_id
-        response = supabase.table("cv_generations").insert(payload).execute()
+        response = get_supabase().table("cv_generations").insert(payload).execute()
         return response.data[0] if response.data else None
     except Exception as e:
         print(f"Error creating generation: {e}")
@@ -374,7 +389,7 @@ def update_generation(
         if error_message:
             update_data["error_message"] = error_message
 
-        supabase.table("cv_generations").update(update_data).eq("id", generation_id).execute()
+        get_supabase().table("cv_generations").update(update_data).eq("id", generation_id).execute()
         return True
     except Exception as e:
         print(f"Error updating generation: {e}")
@@ -383,7 +398,7 @@ def update_generation(
 def get_generation(generation_id: str, user_id: str) -> Optional[Dict]:
     """Get specific generation"""
     try:
-        response = supabase.table("cv_generations").select("*").eq("id", generation_id).eq("user_id", user_id).execute()
+        response = get_supabase().table("cv_generations").select("*").eq("id", generation_id).eq("user_id", user_id).execute()
         return response.data[0] if response.data else None
     except Exception as e:
         print(f"Error getting generation: {e}")
@@ -392,7 +407,7 @@ def get_generation(generation_id: str, user_id: str) -> Optional[Dict]:
 def get_user_generations(user_id: str, limit: int = 50) -> List[Dict]:
     """Get all generations for a user"""
     try:
-        response = supabase.table("cv_generations").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+        response = get_supabase().table("cv_generations").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
         return response.data or []
     except Exception as e:
         print(f"Error getting generations: {e}")
@@ -401,7 +416,7 @@ def get_user_generations(user_id: str, limit: int = 50) -> List[Dict]:
 def get_all_generations(limit: int = 100) -> List[Dict]:
     """Get all generations (admin)"""
     try:
-        response = supabase.table("cv_generations").select("*").order("created_at", desc=True).limit(limit).execute()
+        response = get_supabase().table("cv_generations").select("*").order("created_at", desc=True).limit(limit).execute()
         return response.data or []
     except Exception as e:
         print(f"Error getting all generations: {e}")
@@ -414,7 +429,7 @@ def get_all_generations(limit: int = 100) -> List[Dict]:
 def get_all_users(limit: int = 100) -> List[Dict]:
     """Get all users (admin)"""
     try:
-        response = supabase.table("users").select("*").limit(limit).execute()
+        response = get_supabase().table("users").select("*").limit(limit).execute()
         return response.data or []
     except Exception as e:
         print(f"Error getting users: {e}")
@@ -423,7 +438,7 @@ def get_all_users(limit: int = 100) -> List[Dict]:
 def get_user_activity(user_id: str, limit: int = 100) -> List[Dict]:
     """Get activity logs for specific user"""
     try:
-        response = supabase.table("activity_logs").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+        response = get_supabase().table("activity_logs").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
         return response.data or []
     except Exception as e:
         print(f"Error getting user activity: {e}")
@@ -432,7 +447,7 @@ def get_user_activity(user_id: str, limit: int = 100) -> List[Dict]:
 def get_all_activity(limit: int = 500) -> List[Dict]:
     """Get all activity logs (admin)"""
     try:
-        response = supabase.table("activity_logs").select("*").order("created_at", desc=True).limit(limit).execute()
+        response = get_supabase().table("activity_logs").select("*").order("created_at", desc=True).limit(limit).execute()
         return response.data or []
     except Exception as e:
         print(f"Error getting all activity: {e}")
@@ -441,20 +456,20 @@ def get_all_activity(limit: int = 500) -> List[Dict]:
 def get_admin_stats() -> Dict:
     """Get admin dashboard statistics"""
     try:
-        users_response = supabase.table("users").select("id", count="exact").execute()
+        users_response = get_supabase().table("users").select("id", count="exact").execute()
         total_users = users_response.count or 0
 
-        gens_response = supabase.table("cv_generations").select("id", count="exact").execute()
+        gens_response = get_supabase().table("cv_generations").select("id", count="exact").execute()
         total_generations = gens_response.count or 0
 
-        cvs_response = supabase.table("cvs").select("id", count="exact").execute()
+        cvs_response = get_supabase().table("cvs").select("id", count="exact").execute()
         total_cvs = cvs_response.count or 0
 
         # Library stats
-        bullets_response = supabase.table("cv_bullet_library").select("id", count="exact").execute()
+        bullets_response = get_supabase().table("cv_bullet_library").select("id", count="exact").execute()
         total_bullets = bullets_response.count or 0
 
-        logs_response = supabase.table("cv_assembly_log").select("api_calls_saved").execute()
+        logs_response = get_supabase().table("cv_assembly_log").select("api_calls_saved").execute()
         total_api_saved = sum(r.get("api_calls_saved", 0) for r in (logs_response.data or []))
 
         return {
@@ -487,7 +502,7 @@ def save_bullets_for_cv(bullets: List[Dict]) -> int:
     if not bullets:
         return 0
     try:
-        supabase.table("cv_bullet_library").insert(bullets).execute()
+        get_supabase().table("cv_bullet_library").insert(bullets).execute()
         return len(bullets)
     except Exception as e:
         print(f"Error saving bullets: {e}")
@@ -501,7 +516,7 @@ def get_user_library_bullets(user_id: str) -> List[Dict]:
     """
     try:
         response = (
-            supabase.table("cv_bullet_library")
+            get_supabase().table("cv_bullet_library")
             .select("*")
             .eq("user_id", user_id)
             .order("quality_score", desc=True)
@@ -550,7 +565,7 @@ def save_assembly_log(
 ) -> Optional[Dict]:
     """Record how a CV was assembled — used for admin reporting and cost tracking."""
     try:
-        response = supabase.table("cv_assembly_log").insert({
+        response = get_supabase().table("cv_assembly_log").insert({
             "generation_id":       generation_id,
             "user_id":             user_id,
             "strategy":            strategy,
@@ -582,7 +597,7 @@ def get_user_usage_stats(user_id: str) -> Dict:
     """
     try:
         logs_res = (
-            supabase.table("cv_assembly_log")
+            get_supabase().table("cv_assembly_log")
             .select(
                 "strategy, api_calls_made, api_calls_saved, "
                 "input_tokens, output_tokens, estimated_cost_usd, "
@@ -640,13 +655,13 @@ def get_all_users_usage_stats(limit: int = 200) -> List[Dict]:
     """
     try:
         # Get all users first
-        users_res = supabase.table("users").select(
+        users_res = get_supabase().table("users").select(
             "id, email, full_name, allowed_model, model_label, role"
         ).limit(limit).execute()
         users = users_res.data or []
 
         # Get assembly log aggregates per user
-        logs_res = supabase.table("cv_assembly_log").select(
+        logs_res = get_supabase().table("cv_assembly_log").select(
             "user_id, input_tokens, output_tokens, estimated_cost_usd, "
             "api_calls_saved, coverage_pct, strategy, model_used"
         ).execute()
@@ -732,13 +747,13 @@ def get_user_library_stats(user_id: str) -> Dict:
     """Summary stats for the user's bullet library — shown on dashboard."""
     try:
         bullets_res = (
-            supabase.table("cv_bullet_library")
+            get_supabase().table("cv_bullet_library")
             .select("id", count="exact")
             .eq("user_id", user_id)
             .execute()
         )
         logs_res = (
-            supabase.table("cv_assembly_log")
+            get_supabase().table("cv_assembly_log")
             .select("strategy, api_calls_saved, coverage_pct")
             .eq("user_id", user_id)
             .execute()
@@ -782,7 +797,7 @@ def create_bulk_job(
 ) -> Optional[Dict]:
     """Create a bulk generation job record."""
     try:
-        response = supabase.table("bulk_generation_jobs").insert({
+        response = get_supabase().table("bulk_generation_jobs").insert({
             "user_id":        user_id,
             "base_cv_ids":    base_cv_ids,
             "template_cv_id": template_cv_id,
@@ -812,7 +827,7 @@ def update_bulk_job_progress(
         failed_delta = 1
     try:
         # Fetch current counts
-        res = supabase.table("bulk_generation_jobs").select(
+        res = get_supabase().table("bulk_generation_jobs").select(
             "total_count, completed_count, failed_count"
         ).eq("id", bulk_job_id).single().execute()
         if not res.data:
@@ -836,7 +851,7 @@ def update_bulk_job_progress(
         if completed_at:
             update["completed_at"] = completed_at
 
-        supabase.table("bulk_generation_jobs").update(update).eq("id", bulk_job_id).execute()
+        get_supabase().table("bulk_generation_jobs").update(update).eq("id", bulk_job_id).execute()
     except Exception as e:
         print(f"Error updating bulk job progress: {e}")
 
@@ -845,7 +860,7 @@ def get_user_bulk_jobs(user_id: str, limit: int = 20) -> List[Dict]:
     """Get recent bulk jobs for a user."""
     try:
         response = (
-            supabase.table("bulk_generation_jobs")
+            get_supabase().table("bulk_generation_jobs")
             .select("*")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
@@ -877,7 +892,7 @@ def create_submission(
 ) -> Optional[Dict]:
     """Create a submission tracking record."""
     try:
-        response = supabase.table("submissions").insert({
+        response = get_supabase().table("submissions").insert({
             "user_id":        user_id,
             "generation_id":  generation_id,
             "cv_id":          cv_id,
@@ -902,7 +917,7 @@ def get_user_submissions(user_id: str, status_filter: Optional[str] = None, stat
     """Get all submissions for a user, optionally filtered by status."""
     try:
         query = (
-            supabase.table("submissions")
+            get_supabase().table("submissions")
             .select("*")
             .eq("user_id", user_id)
         )
@@ -928,7 +943,7 @@ def update_submission(
         if fields.get("status") == "submitted" and "submitted_at" not in fields:
             fields["submitted_at"] = datetime.utcnow().isoformat()
         response = (
-            supabase.table("submissions")
+            get_supabase().table("submissions")
             .update(fields)
             .eq("id", submission_id)
             .eq("user_id", user_id)
@@ -944,7 +959,7 @@ def get_submission(submission_id: str, user_id: str) -> Optional[Dict]:
     """Fetch a single submission."""
     try:
         response = (
-            supabase.table("submissions")
+            get_supabase().table("submissions")
             .select("*")
             .eq("id", submission_id)
             .eq("user_id", user_id)
@@ -978,7 +993,7 @@ def get_submission_pipeline(user_id: str) -> Dict:
 def delete_submission(submission_id: str, user_id: str) -> bool:
     """Delete a submission (scoped to owner)."""
     try:
-        supabase.table("submissions").delete().eq("id", submission_id).eq("user_id", user_id).execute()
+        get_supabase().table("submissions").delete().eq("id", submission_id).eq("user_id", user_id).execute()
         return True
     except Exception as e:
         print(f"Error deleting submission: {e}")

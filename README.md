@@ -37,6 +37,15 @@ cv-pilot-v2/
 | State | Zustand |
 | HTTP client | Axios |
 
+## Authentication
+
+CV Pilot supports two login methods:
+
+1. **Email + Password** — built-in Supabase Auth
+2. **Google OAuth** — users can sign in with their Google account (optional)
+
+To set up Google OAuth, see **[docs/GOOGLE_OAUTH_SETUP.md](docs/GOOGLE_OAUTH_SETUP.md)**.
+
 ## Quick start (local dev)
 
 See **[docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md)** for full instructions.
@@ -70,6 +79,8 @@ npm run dev
 | Variable | Description |
 |---|---|
 | `VITE_API_URL` | Backend API base URL (e.g. `http://localhost:8000/api`) |
+| `VITE_SUPABASE_URL` | Your Supabase project URL (optional, for Google OAuth) |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon key (optional, for Google OAuth) |
 
 ## Database setup
 
@@ -81,7 +92,10 @@ Run the SQL files in `database/` against your Supabase project **in order**:
 03_schema_model_assignment.sql Per-user Claude model + audit log
 04_schema_cost_tracking.sql   Token usage & cost columns
 05_schema_submissions_bulk.sql Kanban submissions + bulk generation jobs
+06_schema_google_oauth_trigger.sql Auto-sync users on Google OAuth signup (optional)
 ```
+
+**Note:** Schema file 06 is optional and only needed if you set up Google OAuth. See [docs/GOOGLE_OAUTH_SETUP.md](docs/GOOGLE_OAUTH_SETUP.md).
 
 ## License
 
