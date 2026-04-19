@@ -38,8 +38,8 @@ export default function AuthCallbackPage() {
         // In production, you might fetch this from your users table
         const role = 'user';
 
-        // Store auth info
-        setAuth(access_token, user.id, user.email || '', role);
+        // Store auth info — Google OAuth always remembers (user explicitly chose to sign in)
+        setAuth(access_token, user.id, user.email || '', role, true);
 
         // Redirect to dashboard
         navigate('/dashboard');

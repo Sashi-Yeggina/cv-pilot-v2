@@ -23,7 +23,7 @@ export default function RegisterPage() {
 
       if (access_token) {
         // Email confirmation is disabled — log the user in immediately
-        setAuth(access_token, user_id, email, role);
+        setAuth(access_token, user_id, email, role, false);
         toast.success('Account created successfully!');
         navigate('/dashboard');
       } else {

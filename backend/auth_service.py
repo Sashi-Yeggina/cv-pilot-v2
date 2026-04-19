@@ -38,14 +38,15 @@ async def register_user(email: str, password: str, full_name: str):
 
         user_id = auth_response.user.id
 
-        # Create user profile in users table
-        sb.table("users").insert({
-            "id": user_id,
-            "email": email,
+        # Upsert user profile — safe even if the row already exists
+        # (e.g. re-registering after a DB wipe where auth.users still had the account)
+        sb.table("users").upsert({
+            "id":        user_id,
+            "email":     email,
             "full_name": full_name,
-            "role": "user",
+            "role":      "user",
             "is_active": True
-        }).execute()
+        }, on_conflict="id").execute()
 
         return {
             "success": True,
@@ -99,14 +100,35 @@ async def login_user(email: str, password: str):
         if not auth_response.user or not auth_response.session:
             return {"error": "Invalid credentials"}
 
-        # Get user role
-        user_data = sb.table("users").select("role").eq("id", auth_response.user.id).execute()
-        role = user_data.data[0]["role"] if user_data.data else "user"
+        user_id    = auth_response.user.id
+        user_email = auth_response.user.email
+
+        # ── Ensure a public.users row exists ──────────────────────────────────
+        # After a DB wipe + re-migration the trigger only fires for NEW signups,
+        # so existing Supabase Auth accounts won't have a row yet.  Upsert here
+        # so every login is guaranteed to have a profile row.
+        user_data = sb.table("users").select("role").eq("id", user_id).execute()
+
+        if not user_data.data:
+            # Row missing — upsert it now so FK constraints never blow up
+            try:
+                sb.table("users").upsert({
+                    "id":        user_id,
+                    "email":     user_email,
+                    "full_name": auth_response.user.user_metadata.get("full_name", user_email.split("@")[0]),
+                    "role":      "user",
+                    "is_active": True,
+                }, on_conflict="id").execute()
+            except Exception as upsert_err:
+                print(f"Warning: could not upsert users row: {upsert_err}")
+            role = "user"
+        else:
+            role = user_data.data[0]["role"]
 
         return {
             "success": True,
-            "user_id": auth_response.user.id,
-            "email": auth_response.user.email,
+            "user_id": user_id,
+            "email":   user_email,
             "access_token": auth_response.session.access_token,
             "role": role
         }

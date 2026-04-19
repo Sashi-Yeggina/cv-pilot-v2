@@ -90,9 +90,15 @@ app = FastAPI(
 # CORS MIDDLEWARE
 # ════════════════════════════════════════════════════════════════
 
+_cors_origins = [settings.FRONTEND_URL]
+# Also allow the alternate Vite dev port so either npm run dev port works
+for _extra in ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"]:
+    if _extra not in _cors_origins:
+        _cors_origins.append(_extra)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -125,12 +131,15 @@ async def register(request: RegisterRequest):
         if "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
 
-        # Log activity
-        create_activity_log(
-            user_id=result["user_id"],
-            action_type="register",
-            description=f"User registered"
-        )
+        # Log activity — wrapped so a DB hiccup never blocks the register response
+        try:
+            create_activity_log(
+                user_id=result["user_id"],
+                action_type="register",
+                description="User registered"
+            )
+        except Exception as log_err:
+            print(f"Warning: activity log failed on register (non-fatal): {log_err}")
 
         return AuthResponse(
             access_token=result.get("access_token") or "",
@@ -150,12 +159,15 @@ async def login(request: LoginRequest):
         if "error" in result:
             raise HTTPException(status_code=401, detail="Invalid credentials")
 
-        # Log activity
-        create_activity_log(
-            user_id=result["user_id"],
-            action_type="login",
-            description=f"User logged in"
-        )
+        # Log activity — wrapped so a DB hiccup never blocks the login response
+        try:
+            create_activity_log(
+                user_id=result["user_id"],
+                action_type="login",
+                description="User logged in"
+            )
+        except Exception as log_err:
+            print(f"Warning: activity log failed (non-fatal): {log_err}")
 
         return AuthResponse(
             access_token=result["access_token"],
@@ -166,6 +178,7 @@ async def login(request: LoginRequest):
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Login endpoint error: {e}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
 @app.post("/api/auth/logout")
