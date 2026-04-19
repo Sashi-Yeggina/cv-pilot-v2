@@ -537,7 +537,7 @@ def increment_bullet_usage(bullet_ids: List[str]) -> None:
         return
     try:
         for bid in bullet_ids:
-            supabase.rpc(
+            get_supabase().rpc(
                 "increment_bullet_usage",    # Postgres function — see migration
                 {"p_bullet_id": bid}
             ).execute()

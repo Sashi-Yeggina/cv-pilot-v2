@@ -3,6 +3,8 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime
 from uuid import UUID
+from dataclasses import dataclass
+from decimal import Decimal
 
 # ════════════════════════════════════════════════════════════════
 # AUTH MODELS
@@ -246,3 +248,27 @@ class AdminAlertResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     version: str = "1.0.0"
+
+
+# ════════════════════════════════════════════════════════════════
+# MODEL SETTINGS (for Claude + OpenAI selection)
+# ════════════════════════════════════════════════════════════════
+
+@dataclass
+class ModelSettings:
+    """Admin-controlled settings for each AI model"""
+    id: str
+    model_id: str
+    provider: str  # 'claude' or 'openai'
+    model_name: str
+    is_enabled: bool
+    is_visible_to_free_tier: bool
+    is_visible_to_pro_tier: bool
+    is_visible_to_enterprise_tier: bool
+    cost_per_cv: Decimal
+    estimated_speed_seconds: int
+    quality_tier: str  # 'budget', 'balanced', 'premium'
+    recommendation_text: Optional[str]
+    disabled_reason: Optional[str]
+    created_at: datetime
+    updated_at: datetime

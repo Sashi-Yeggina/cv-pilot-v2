@@ -30,7 +30,11 @@ Pricing (USD per 1M tokens, April 2026)
 
 from anthropic import Anthropic
 from config import settings
+from openai_engine import enhance_cv_openai, OPENAI_MODELS
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 
@@ -69,33 +73,93 @@ LIBRARY_PATCH_THRESHOLD = 0.55   # use library + small patch API call
 # below 0.55 → full generation
 
 # ─────────────────────────────────────────────────────────────────────────────
-# AVAILABLE MODELS — single source of truth shared with admin UI
+# PROVIDER ROUTING & MODEL SELECTION
+# ─────────────────────────────────────────────────────────────────────────────
+
+def route_to_provider(model_id: str) -> str:
+    """Determine which provider (claude or openai) to use for a model"""
+    claude_models = {"claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"}
+    openai_models = {"gpt-3.5-turbo", "gpt-4o", "gpt-4-turbo"}
+
+    if model_id in claude_models:
+        return "claude"
+    elif model_id in openai_models:
+        return "openai"
+    else:
+        return "claude"  # default
+
+
+def track_model_usage(user_id: str, model_id: str, cost: float):
+    """Track which models user has used (for recommendations)"""
+    try:
+        from database import get_supabase
+        sb = get_supabase()
+        # This assumes user_model_usage table exists (from migration 08)
+        sb.table("user_model_usage").upsert({
+            "user_id": user_id,
+            "model_id": model_id,
+            "times_used": 1,
+            "total_cost_spent": cost
+        }).execute()
+    except Exception as e:
+        logger.warning(f"Could not track model usage: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# AVAILABLE MODELS — Claude + OpenAI combined
 # ─────────────────────────────────────────────────────────────────────────────
 AVAILABLE_MODELS = [
     {
-        "id":          "claude-haiku-4-5-20251001",
-        "label":       "Haiku (Fast · Low Cost)",
+        "id":          "claude-haiku-4-5",
+        "label":       "Claude Haiku (Fast · Low Cost)",
+        "provider":    "claude",
         "description": "Best for most users. Fastest response, lowest API cost.",
         "tier":        "standard",
-        "approx_cost": "$0.25 / 1M input tokens",
+        "approx_cost": "$0.0008 per CV",
     },
     {
         "id":          "claude-sonnet-4-6",
-        "label":       "Sonnet (Balanced)",
+        "label":       "Claude Sonnet (Balanced)",
+        "provider":    "claude",
         "description": "Higher quality CV writing. Good for senior/complex roles.",
         "tier":        "premium",
-        "approx_cost": "$3 / 1M input tokens",
+        "approx_cost": "$0.003 per CV",
     },
     {
         "id":          "claude-opus-4-6",
-        "label":       "Opus (Highest Quality)",
+        "label":       "Claude Opus (Highest Quality)",
+        "provider":    "claude",
         "description": "Best possible output. Reserved for executive / C-suite CVs.",
         "tier":        "elite",
-        "approx_cost": "$15 / 1M input tokens",
+        "approx_cost": "$0.015 per CV",
+    },
+    {
+        "id":          "gpt-3.5-turbo",
+        "label":       "GPT-3.5 Turbo (Fastest)",
+        "provider":    "openai",
+        "description": "OpenAI's fastest model. Great for quick CVs.",
+        "tier":        "budget",
+        "approx_cost": "$0.0005 per CV",
+    },
+    {
+        "id":          "gpt-4o",
+        "label":       "GPT-4o (Latest)",
+        "provider":    "openai",
+        "description": "OpenAI's latest multimodal model. Excellent quality.",
+        "tier":        "balanced",
+        "approx_cost": "$0.005 per CV",
+    },
+    {
+        "id":          "gpt-4-turbo",
+        "label":       "GPT-4 Turbo (Most Capable)",
+        "provider":    "openai",
+        "description": "OpenAI's most powerful model.",
+        "tier":        "elite",
+        "approx_cost": "$0.010 per CV",
     },
 ]
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_MODEL = "claude-haiku-4-5"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. PARSE JD  (always 1 call — needed to know what skills the JD requires)
@@ -242,16 +306,48 @@ Return ONLY valid JSON:
 # 4. FULL ENHANCE  (only called when coverage < LIBRARY_PATCH_THRESHOLD)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def enhance_cv(cv_text: str, jd_text: str, jd_profile: dict, model: str = DEFAULT_MODEL) -> dict:
+def enhance_cv(cv_text: str, jd_text: str, jd_profile: dict, model: str = DEFAULT_MODEL, user_id: str = None) -> dict:
     """
-    Full CV enhancement — rewrites title, summary, and experience bullets.
+    Full CV enhancement — routes to either Claude or OpenAI based on model selection.
+    Rewrites title, summary, and experience bullets.
     Returns: { "result": {...}, "input_tokens": n, "output_tokens": n, "cost_usd": n }
     """
     try:
-        response = client.messages.create(
-            model=model,
-            max_tokens=2500,
-            messages=[{"role": "user", "content": f"""You are an expert CV writer. Enhance this CV to match the job requirements.
+        if not model:
+            model = DEFAULT_MODEL
+
+        provider = route_to_provider(model)
+
+        if provider == "openai":
+            # Route to OpenAI
+            jd_prompt = f"{jd_text}\n\nRequired Skills: {', '.join(jd_profile.get('required_skills', []))}"
+            openai_result = enhance_cv_openai(cv_text, jd_prompt, model)
+
+            if openai_result.get("status") == "success":
+                # Track usage
+                if user_id:
+                    track_model_usage(user_id, model, openai_result.get("cost", 0))
+
+                return {
+                    "result": {
+                        "enhanced_title": "Enhanced by GPT",
+                        "enhanced_summary": openai_result.get("enhanced_cv", "")[:200],
+                        "enhanced_bullets": [openai_result.get("enhanced_cv", "")[:500]],
+                        "injected_keywords": [],
+                        "changes_made": f"Enhanced using {model}"
+                    },
+                    "input_tokens": 0,  # OpenAI API doesn't return token counts in older versions
+                    "output_tokens": 0,
+                    "cost_usd": openai_result.get("cost", 0)
+                }
+            else:
+                return {"result": _default_enhance(), "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
+        else:
+            # Route to Claude (existing behavior)
+            response = client.messages.create(
+                model=model,
+                max_tokens=2500,
+                messages=[{"role": "user", "content": f"""You are an expert CV writer. Enhance this CV to match the job requirements.
 
 Original CV:
 {cv_text[:3000]}
@@ -277,10 +373,17 @@ Return ONLY valid JSON:
   "injected_keywords": ["AWS", "Terraform"],
   "changes_made": "Summary of changes"
 }}"""}]
-        )
-        return {"result": _parse_json_response(response), **_usage(response, model)}
+            )
+
+            result = {"result": _parse_json_response(response), **_usage(response, model)}
+
+            # Track usage
+            if user_id and result.get("cost_usd"):
+                track_model_usage(user_id, model, result.get("cost_usd", 0))
+
+            return result
     except Exception as e:
-        print(f"[enhance_cv] error: {e}")
+        logger.error(f"[enhance_cv] error: {e}")
         return {"result": _default_enhance(), "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
 
 # ─────────────────────────────────────────────────────────────────────────────

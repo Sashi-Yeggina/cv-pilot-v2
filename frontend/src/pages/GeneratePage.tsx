@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { cvAPI, jdAPI, generationAPI } from '../services/api';
 import type { AxiosError } from 'axios';
 import toast from 'react-hot-toast';
+import { ModelSelector } from '../components/ModelSelector';
+import { useModelStore } from '../stores/modelStore';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -83,10 +85,14 @@ export default function GeneratePage() {
   const [step, setStep] = useState<'configure' | 'preview' | 'generating'>('configure');
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
+  // Model selection state
+  const { selectedModel, setSelectedModel, availableModels, setAvailableModels } = useModelStore();
+
   const navigate = useNavigate();
 
   useEffect(() => {
     loadCVs();
+    loadModels();
   }, []);
 
   const loadCVs = async () => {
@@ -99,6 +105,62 @@ export default function GeneratePage() {
       setTemplateCVs(tmplResp.data.cvs || []);
     } catch {
       toast.error('Failed to load CVs');
+    }
+  };
+
+  const loadModels = async () => {
+    try {
+      // Hardcoded models since backend doesn't have /api/models/available yet
+      const models = [
+        {
+          id: 'claude-haiku-4-5',
+          label: 'Claude Haiku (Fast · Low Cost)',
+          provider: 'claude',
+          description: 'Best for most users. Fastest response, lowest API cost.',
+          tier: 'standard',
+          approx_cost: '$0.0008 per CV',
+          is_enabled: true,
+        },
+        {
+          id: 'claude-sonnet-4-6',
+          label: 'Claude Sonnet (Balanced)',
+          provider: 'claude',
+          description: 'Higher quality CV writing. Good for senior/complex roles.',
+          tier: 'premium',
+          approx_cost: '$0.003 per CV',
+          is_enabled: true,
+        },
+        {
+          id: 'claude-opus-4-6',
+          label: 'Claude Opus (Highest Quality)',
+          provider: 'claude',
+          description: 'Best possible output. Reserved for executive / C-suite CVs.',
+          tier: 'elite',
+          approx_cost: '$0.015 per CV',
+          is_enabled: true,
+        },
+        {
+          id: 'gpt-3.5-turbo',
+          label: 'GPT-3.5 Turbo (Fastest)',
+          provider: 'openai',
+          description: "OpenAI's fastest model. Great for quick CVs.",
+          tier: 'budget',
+          approx_cost: '$0.0005 per CV',
+          is_enabled: true,
+        },
+        {
+          id: 'gpt-4o',
+          label: 'GPT-4o (Latest)',
+          provider: 'openai',
+          description: "OpenAI's latest multimodal model. Excellent quality.",
+          tier: 'balanced',
+          approx_cost: '$0.005 per CV',
+          is_enabled: true,
+        },
+      ];
+      setAvailableModels(models);
+    } catch {
+      toast.error('Failed to load models');
     }
   };
 
@@ -185,9 +247,10 @@ export default function GeneratePage() {
         jdId,
         selectedCVs,
         selectedTemplate || undefined,
+        selectedModel?.id || 'claude-haiku-4-5',
       );
       setGenerationStatus(genResponse.data);
-      toast.success('CV generation started!');
+      toast.success(`CV generation started with ${selectedModel?.label || 'Claude Haiku'}!`);
 
       // Poll for completion
       let completed = false;
@@ -365,6 +428,20 @@ export default function GeneratePage() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Model Selection */}
+      <div className="bg-white rounded-xl shadow p-6">
+        <ModelSelector
+          models={availableModels}
+          selectedModelId={selectedModel?.id || 'claude-haiku-4-5'}
+          onModelSelect={(modelId) => {
+            const model = availableModels.find(m => m.id === modelId);
+            if (model) setSelectedModel(model);
+          }}
+          userTier="free"
+          showOnlyEnabled={true}
+        />
       </div>
 
       {/* Actions */}

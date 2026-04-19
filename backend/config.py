@@ -13,6 +13,13 @@ class Settings(BaseSettings):
     # Anthropic (Claude API)
     ANTHROPIC_API_KEY: Optional[str] = None
 
+    # ════════════════════════════════════════════════════════════════
+    # OpenAI Configuration (Optional)
+    # ════════════════════════════════════════════════════════════════
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_DEFAULT_MODEL: str = "gpt-4o"
+    ENABLE_OPENAI: bool = False
+
     # FastAPI
     ENV: str = "development"
     SECRET_KEY: str = "change-me-in-production"

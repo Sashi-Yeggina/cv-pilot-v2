@@ -1,217 +1,160 @@
-import axios from 'axios';
+/**
+ * API Services for CV Pilot
+ * Wraps axios calls to the backend
+ */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+import axios, { AxiosInstance } from 'axios';
 
-export const api = axios.create({
-  baseURL: API_BASE,
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+// Create axios instance
+const api: AxiosInstance = axios.create({
+  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
-  }
+  },
 });
 
-// Add token to requests
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+// Add auth token to requests
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Handle 401 responses
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('access_token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
   }
-  return config;
-});
-
-// Auth API
-export const authAPI = {
-  register: (email: string, password: string, fullName: string) =>
-    api.post('/auth/register', { email, password, full_name: fullName }),
-
-  login: (email: string, password: string) =>
-    api.post('/auth/login', { email, password }),
-
-  logout: () =>
-    api.post('/auth/logout'),
-};
+);
 
 // CV API
 export const cvAPI = {
-  upload: (file: File, cvType: string) => {
+  upload: (file: File, cvType: string = 'base') => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('cv_type', cvType);
-    return api.post('/cv/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+    return api.post('/api/cv/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
 
-  list: (cvType?: string) =>
-    api.get('/cv/list', { params: { cv_type: cvType } }),
+  list: (cvType?: string) => {
+    const url = cvType ? `/api/cv/list?cv_type=${cvType}` : '/api/cv/list';
+    return api.get(url);
+  },
 
-  download: (cvId: string) =>
-    api.get(`/cv/${cvId}/download`),
+  download: (cvId: string) => {
+    return api.get(`/api/cv/${cvId}/download`, { responseType: 'blob' });
+  },
 
-  delete: (cvId: string) =>
-    api.delete(`/cv/${cvId}`),
+  delete: (cvId: string) => api.delete(`/api/cv/${cvId}`),
 };
 
-// JD API
+// Job Description API
 export const jdAPI = {
-  create: (
-    fullText: string,
-    roleTitle?: string,
-    companyName?: string,
-    vendorName?: string,
-    clientName?: string,
-    clientEmail?: string,
-    notes?: string,
-  ) =>
-    api.post('/jd/create', {
-      full_text:    fullText,
-      role_title:   roleTitle,
+  create: (fullText: string, roleTitle?: string, companyName?: string, vendorName?: string, clientName?: string, clientEmail?: string, notes?: string) => {
+    return api.post('/api/jd/create', {
+      full_text: fullText,
+      role_title: roleTitle,
       company_name: companyName,
-      vendor_name:  vendorName,
-      client_name:  clientName,
+      vendor_name: vendorName,
+      client_name: clientName,
       client_email: clientEmail,
-      notes,
-    }),
+      notes: notes,
+    });
+  },
 
-  list: () =>
-    api.get('/jd/list'),
+  list: () => api.get('/api/jd/list'),
 
-  /** Check if the same JD + client_email was already processed by another user. */
-  checkDuplicate: (jdText: string, clientEmail?: string) =>
-    api.post('/jd/check-duplicate', { jd_text: jdText, client_email: clientEmail }),
+  checkDuplicate: (jdText: string, clientEmail?: string) => {
+    return api.post('/api/jd/check-duplicate', { jd_text: jdText, client_email: clientEmail });
+  },
 };
 
 // Generation API
 export const generationAPI = {
-  generate: (jdId: string, baseCvIds: string[], templateCvId?: string) =>
-    api.post('/cv/generate', { jd_id: jdId, base_cv_ids: baseCvIds, template_cv_id: templateCvId }),
+  generate: (jdId: string, baseCvIds: string[], templateCvId?: string, selectedModel?: string) => {
+    return api.post('/api/cv/generate', {
+      jd_id: jdId,
+      base_cv_ids: baseCvIds,
+      template_cv_id: templateCvId,
+      selected_model: selectedModel,
+    });
+  },
 
-  getStatus: (generationId: string) =>
-    api.get(`/generation/${generationId}`),
+  getStatus: (generationId: string) => api.get(`/api/generation/${generationId}`),
 
-  list: () =>
-    api.get('/generation/list'),
+  list: () => api.get('/api/generation/list'),
 
-  /** Check library coverage before generating — no full AI generation triggered */
-  matchLibrary: (jdText: string) =>
-    api.post('/cv/match', { jd_text: jdText }),
+  matchLibrary: (jdText: string) => api.post('/api/cv/match', { jd_text: jdText }),
+};
+
+// Model API
+export const modelAPI = {
+  getAvailable: () => api.get('/api/models/available'),
+  setPreferred: (modelId: string) => api.post('/api/models/set-preferred', { model_id: modelId }),
+  getAdmin: () => api.get('/api/admin/models'),
+  updateAdmin: (modelId: string, data: any) => api.patch(`/api/admin/models/${modelId}`, data),
+  getUser: (userId: string) => api.get(`/api/admin/users/${userId}/model`),
+  updateUser: (userId: string, modelId: string, reason?: string) => {
+    return api.patch(`/api/admin/users/${userId}/model`, { model: modelId, reason });
+  },
 };
 
 // Bulk Generation API
-export interface BulkJDItem {
-  jd_text: string;
-  role_title?: string;
-  vendor_name?: string;
-  client_name?: string;
-  client_email?: string;
-  notes?: string;
-}
-
 export const bulkAPI = {
-  generate: (baseCvIds: string[], items: BulkJDItem[], templateCvId?: string) =>
-    api.post('/cv/bulk-generate', {
-      base_cv_ids:    baseCvIds,
-      template_cv_id: templateCvId,
-      items,
-    }),
-
-  getJob: (bulkJobId: string) =>
-    api.get(`/cv/bulk-generate/${bulkJobId}`),
-
-  listJobs: () =>
-    api.get('/cv/bulk-jobs'),
+  generate: (data: any) => api.post('/api/cv/bulk-generate', data),
+  getStatus: (bulkJobId: string) => api.get(`/api/cv/bulk-generate/${bulkJobId}`),
+  list: () => api.get('/api/cv/bulk-jobs'),
 };
 
-// Submissions API
-export const submissionsAPI = {
-  list: (status?: string) =>
-    api.get('/submissions', { params: status ? { status } : {} }),
-
-  get: (submissionId: string) =>
-    api.get(`/submissions/${submissionId}`),
-
-  create: (data: {
-    generation_id?: string;
-    cv_id?: string;
-    jd_id?: string;
-    candidate_name?: string;
-    vendor_name?: string;
-    client_name?: string;
-    client_email?: string;
-    role_title?: string;
-    notes?: string;
-  }) => api.post('/submissions', data),
-
-  update: (submissionId: string, data: {
-    status?: string;
-    notes?: string;
-    submitted_at?: string;
-    follow_up_at?: string;
-    interview_at?: string;
-  }) => api.patch(`/submissions/${submissionId}`, data),
-
-  delete: (submissionId: string) =>
-    api.delete(`/submissions/${submissionId}`),
-};
-
-// History API
-export const historyAPI = {
-  getActivity: () =>
-    api.get('/history'),
+// Submission API
+export const submissionAPI = {
+  create: (data: any) => api.post('/api/submissions', data),
+  list: (status?: string) => api.get(status ? `/api/submissions?status=${status}` : '/api/submissions'),
+  get: (submissionId: string) => api.get(`/api/submissions/${submissionId}`),
+  update: (submissionId: string, data: any) => api.patch(`/api/submissions/${submissionId}`, data),
+  delete: (submissionId: string) => api.delete(`/api/submissions/${submissionId}`),
 };
 
 // Admin API
 export const adminAPI = {
-  getUsers: () =>
-    api.get('/admin/users'),
-
-  getUserActivity: (userId: string) =>
-    api.get(`/admin/users/${userId}/activity`),
-
-  getActivityStream: () =>
-    api.get('/admin/activity'),
-
-  getStats: () =>
-    api.get('/admin/stats'),
-
-  // ── Model management ──────────────────────────────────────────
-  listModels: () =>
-    api.get('/admin/models'),
-
-  getUserModel: (userId: string) =>
-    api.get(`/admin/users/${userId}/model`),
-
-  updateUserModel: (userId: string, model: string, reason?: string) =>
-    api.patch(`/admin/users/${userId}/model`, { model, reason }),
-
-  // ── Usage & Cost ──────────────────────────────────────────────
-  /** All-users cost/token summary for the Usage & Cost tab */
-  getUsage: () =>
-    api.get('/admin/usage'),
-
-  /** Per-user detailed cost breakdown */
-  getUserUsage: (userId: string) =>
-    api.get(`/admin/users/${userId}/usage`),
-
-  // ── Admin Generate ────────────────────────────────────────────
-  /** Fetch a user's CVs (to populate the admin generate form) */
-  getUserCVs: (userId: string) =>
-    api.get(`/admin/users/${userId}/cvs`),
-
-  /** Fetch a user's saved JDs */
-  getUserJDs: (userId: string) =>
-    api.get(`/admin/users/${userId}/jds`),
-
-  /** Trigger CV generation on behalf of a user */
-  generateForUser: (
-    targetUserId: string,
-    jdText: string,
-    baseCvIds: string[],
-    templateCvId?: string,
-  ) =>
-    api.post('/admin/generate', {
-      target_user_id: targetUserId,
-      jd_text:        jdText,
-      base_cv_ids:    baseCvIds,
-      template_cv_id: templateCvId,
-    }),
+  listUsers: () => api.get('/api/admin/users'),
+  getUserActivity: (userId: string) => api.get(`/api/admin/users/${userId}/activity`),
+  getActivityStream: () => api.get('/api/admin/activity'),
+  getStats: () => api.get('/api/admin/stats'),
+  getUsage: () => api.get('/api/admin/usage'),
+  getUserUsage: (userId: string) => api.get(`/api/admin/users/${userId}/usage`),
+  generateCV: (data: any) => api.post('/api/admin/generate', data),
 };
+
+// Activity API
+export const activityAPI = {
+  getHistory: () => api.get('/api/history'),
+};
+
+// Auth API
+export const authAPI = {
+  register: (email: string, password: string, fullName: string) => {
+    return api.post('/api/auth/register', { email, password, full_name: fullName });
+  },
+  login: (email: string, password: string) => api.post('/api/auth/login', { email, password }),
+  logout: () => {
+    localStorage.removeItem('access_token');
+    return Promise.resolve();
+  },
+};
+
+export default api;
