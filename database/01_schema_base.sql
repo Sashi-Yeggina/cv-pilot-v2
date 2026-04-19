@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS cv_generations (
   status VARCHAR(50) DEFAULT 'pending',
   error_message TEXT,
   processing_time_ms INT,
+  updated_at TIMESTAMP DEFAULT NOW(),
 
   created_at TIMESTAMP DEFAULT NOW(),
   completed_at TIMESTAMP,

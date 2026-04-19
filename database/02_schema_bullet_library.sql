@@ -102,6 +102,21 @@ CREATE POLICY "Users insert own assembly logs"
 
 
 -- ────────────────────────────────────────────────────────────────
+-- RPC helper used by backend/database.py::increment_bullet_usage
+-- ────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION increment_bullet_usage(p_bullet_id UUID)
+RETURNS VOID AS $$
+BEGIN
+  UPDATE cv_bullet_library
+  SET
+    usage_count  = COALESCE(usage_count, 0) + 1,
+    last_used_at = NOW()
+  WHERE id = p_bullet_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- ────────────────────────────────────────────────────────────────
 -- Helper view: admin can see library usage stats per user
 -- ────────────────────────────────────────────────────────────────
 CREATE OR REPLACE VIEW admin_library_stats AS

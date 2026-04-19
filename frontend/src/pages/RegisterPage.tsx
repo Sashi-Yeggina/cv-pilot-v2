@@ -21,9 +21,15 @@ export default function RegisterPage() {
       const response = await authAPI.register(email, password, fullName);
       const { access_token, user_id, role } = response.data;
 
-      setAuth(access_token, user_id, email, role);
-      toast.success('Account created successfully!');
-      navigate('/dashboard');
+      if (access_token) {
+        // Email confirmation is disabled — log the user in immediately
+        setAuth(access_token, user_id, email, role);
+        toast.success('Account created successfully!');
+        navigate('/dashboard');
+      } else {
+        // Email confirmation is required — send to the verify email page
+        navigate('/verify-email', { state: { email } });
+      }
     } catch (error: any) {
       const message = error.response?.data?.detail || 'Registration failed';
       toast.error(message);

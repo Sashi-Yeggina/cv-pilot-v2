@@ -4,6 +4,7 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
+import { useAuthStore } from '../stores/authStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -128,6 +129,12 @@ export const submissionAPI = {
   update: (submissionId: string, data: any) => api.patch(`/api/submissions/${submissionId}`, data),
   delete: (submissionId: string) => api.delete(`/api/submissions/${submissionId}`),
 };
+
+// Alias for backwards compatibility
+export const submissionsAPI = submissionAPI;
+
+// Export auth store
+export { useAuthStore };
 
 // Admin API
 export const adminAPI = {

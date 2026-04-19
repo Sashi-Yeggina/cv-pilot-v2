@@ -57,12 +57,42 @@ async def register_user(email: str, password: str, full_name: str):
         print(f"Registration error: {e}")
         return {"error": str(e)}
 
+async def resolve_email(identifier: str) -> str:
+    """Return the email for a given identifier.
+
+    If the identifier looks like an email address (contains @) it is returned
+    as-is.  Otherwise it is treated as a full_name and looked up in the users
+    table so that users can log in with their display name.
+    """
+    if "@" in identifier:
+        return identifier
+
+    sb = get_supabase()
+    result = (
+        sb.table("users")
+        .select("email")
+        .ilike("full_name", identifier)   # case-insensitive match
+        .limit(1)
+        .execute()
+    )
+    if result.data:
+        return result.data[0]["email"]
+
+    # Fall back to the original string so Supabase returns a clear auth error
+    return identifier
+
+
 async def login_user(email: str, password: str):
-    """Login user via Supabase Auth"""
+    """Login user via Supabase Auth.
+
+    ``email`` may be an email address or a full name — resolve_email() handles
+    the lookup before passing to Supabase.
+    """
     try:
         sb = get_supabase()
+        resolved_email = await resolve_email(email)
         auth_response = sb.auth.sign_in_with_password({
-            "email": email,
+            "email": resolved_email,
             "password": password
         })
 

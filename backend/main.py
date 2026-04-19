@@ -1,5 +1,5 @@
 """Main FastAPI application for CV Pilot API"""
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, WebSocket, WebSocketDisconnect, status, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File, WebSocket, WebSocketDisconnect, status, BackgroundTasks, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
@@ -196,7 +196,7 @@ def get_current_user_id(authorization: str = None) -> str:
 async def upload_cv_file(
     file: UploadFile = File(...),
     cv_type: str = "base",
-    authorization: str = None
+    authorization: str = Header(default=None)
 ):
     """Upload CV file"""
     try:
@@ -291,7 +291,7 @@ async def upload_cv_file(
 @app.post("/api/cv/match")
 async def match_cv_to_jd(
     request: dict,
-    authorization: str = None
+    authorization: str = Header(default=None)
 ):
     """
     Preview how well the user's bullet library covers a job description.
@@ -353,7 +353,7 @@ async def match_cv_to_jd(
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/cv/list", response_model=CVListResponse)
-async def list_cvs(cv_type: str = None, authorization: str = None):
+async def list_cvs(cv_type: str = None, authorization: str = Header(default=None)):
     """List user's CVs"""
     try:
         user_id = get_current_user_id(authorization)
@@ -378,7 +378,7 @@ async def list_cvs(cv_type: str = None, authorization: str = None):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/cv/{cv_id}/download")
-async def download_cv_file(cv_id: str, authorization: str = None):
+async def download_cv_file(cv_id: str, authorization: str = Header(default=None)):
     """Download CV file"""
     try:
         user_id = get_current_user_id(authorization)
@@ -410,7 +410,7 @@ async def download_cv_file(cv_id: str, authorization: str = None):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.delete("/api/cv/{cv_id}")
-async def delete_cv_file(cv_id: str, authorization: str = None):
+async def delete_cv_file(cv_id: str, authorization: str = Header(default=None)):
     """Delete CV"""
     try:
         user_id = get_current_user_id(authorization)
@@ -440,7 +440,7 @@ async def delete_cv_file(cv_id: str, authorization: str = None):
 # ════════════════════════════════════════════════════════════════
 
 @app.post("/api/jd/create", response_model=JDResponse)
-async def create_jd_endpoint(request: JDRequest, authorization: str = None):
+async def create_jd_endpoint(request: JDRequest, authorization: str = Header(default=None)):
     """Create job description (saved to DB; generation must succeed for it to persist)."""
     try:
         user_id = get_current_user_id(authorization)
@@ -485,7 +485,7 @@ async def create_jd_endpoint(request: JDRequest, authorization: str = None):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/jd/list", response_model=JDListResponse)
-async def list_jds(authorization: str = None):
+async def list_jds(authorization: str = Header(default=None)):
     """List user's JDs"""
     try:
         user_id = get_current_user_id(authorization)
@@ -511,7 +511,7 @@ async def list_jds(authorization: str = None):
 
 
 @app.post("/api/jd/check-duplicate", response_model=JDDuplicateWarning)
-async def check_jd_duplicate_endpoint(request: dict, authorization: str = None):
+async def check_jd_duplicate_endpoint(request: dict, authorization: str = Header(default=None)):
     """
     Check whether the same JD text + client_email combination was already
     submitted by a different user.  Returns a warning so the UI can show a
@@ -544,7 +544,7 @@ async def check_jd_duplicate_endpoint(request: dict, authorization: str = None):
 async def generate_cv(
     request: GenerationRequest,
     background_tasks: BackgroundTasks,
-    authorization: str = None,
+    authorization: str = Header(default=None),
 ):
     """Generate new CV from 1–3 base CVs + JD (async — returns immediately)."""
     try:
@@ -871,7 +871,7 @@ def process_generation_sync(generation_id: str, user_id: str, request: Generatio
         update_generation(generation_id, "failed", error_message=str(e))
 
 @app.get("/api/generation/{generation_id}", response_model=GenerationResponse)
-async def get_generation_endpoint(generation_id: str, authorization: str = None):
+async def get_generation_endpoint(generation_id: str, authorization: str = Header(default=None)):
     """Get generation status"""
     try:
         user_id = get_current_user_id(authorization)
@@ -897,7 +897,7 @@ async def get_generation_endpoint(generation_id: str, authorization: str = None)
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/generation/list", response_model=GenerationListResponse)
-async def list_generations(authorization: str = None):
+async def list_generations(authorization: str = Header(default=None)):
     """List user's generations"""
     try:
         user_id = get_current_user_id(authorization)
@@ -926,7 +926,7 @@ async def list_generations(authorization: str = None):
 # ════════════════════════════════════════════════════════════════
 
 @app.get("/api/history", response_model=ActivityStreamResponse)
-async def get_activity_history(authorization: str = None):
+async def get_activity_history(authorization: str = Header(default=None)):
     """Get user's activity history"""
     try:
         user_id = get_current_user_id(authorization)
@@ -953,7 +953,7 @@ async def get_activity_history(authorization: str = None):
 # ════════════════════════════════════════════════════════════════
 
 @app.get("/api/admin/users", response_model=UserListResponse)
-async def admin_list_users(authorization: str = None):
+async def admin_list_users(authorization: str = Header(default=None)):
     """List all users (admin)"""
     try:
         # TODO: Verify admin role
@@ -975,7 +975,7 @@ async def admin_list_users(authorization: str = None):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/admin/users/{user_id}/activity")
-async def admin_user_activity(user_id: str, authorization: str = None):
+async def admin_user_activity(user_id: str, authorization: str = Header(default=None)):
     """Get specific user's activity (admin)"""
     try:
         # TODO: Verify admin role
@@ -996,7 +996,7 @@ async def admin_user_activity(user_id: str, authorization: str = None):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/admin/activity")
-async def admin_activity_stream(authorization: str = None):
+async def admin_activity_stream(authorization: str = Header(default=None)):
     """Get all activity logs (admin)"""
     try:
         # TODO: Verify admin role
@@ -1021,7 +1021,7 @@ async def admin_activity_stream(authorization: str = None):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.get("/api/admin/users/{user_id}/cvs")
-async def admin_get_user_cvs(user_id: str, authorization: str = None):
+async def admin_get_user_cvs(user_id: str, authorization: str = Header(default=None)):
     """Get all CVs belonging to a specific user (for admin generate form)."""
     try:
         admin_id = get_current_user_id(authorization)
@@ -1037,7 +1037,7 @@ async def admin_get_user_cvs(user_id: str, authorization: str = None):
 
 
 @app.get("/api/admin/users/{user_id}/jds")
-async def admin_get_user_jds(user_id: str, authorization: str = None):
+async def admin_get_user_jds(user_id: str, authorization: str = Header(default=None)):
     """Get all job descriptions belonging to a specific user."""
     try:
         admin_id = get_current_user_id(authorization)
@@ -1053,7 +1053,7 @@ async def admin_get_user_jds(user_id: str, authorization: str = None):
 
 
 @app.post("/api/admin/generate")
-async def admin_generate_cv(body: dict, authorization: str = None):
+async def admin_generate_cv(body: dict, authorization: str = Header(default=None)):
     """
     Admin triggers CV generation on behalf of a user.
 
@@ -1143,7 +1143,7 @@ async def admin_generate_cv(body: dict, authorization: str = None):
 
 
 @app.get("/api/admin/usage")
-async def admin_usage(authorization: str = None):
+async def admin_usage(authorization: str = Header(default=None)):
     """
     Return per-user cost & token usage stats for every account.
     Powers the Usage & Cost tab in the admin dashboard.
@@ -1166,7 +1166,7 @@ async def admin_usage(authorization: str = None):
 
 
 @app.get("/api/admin/users/{user_id}/usage")
-async def admin_user_usage(user_id: str, authorization: str = None):
+async def admin_user_usage(user_id: str, authorization: str = Header(default=None)):
     """Detailed cost & usage stats for a single user."""
     try:
         get_current_user_id(authorization)
@@ -1187,7 +1187,7 @@ async def admin_user_usage(user_id: str, authorization: str = None):
 
 
 @app.get("/api/admin/stats", response_model=AdminStatsResponse)
-async def admin_stats(authorization: str = None):
+async def admin_stats(authorization: str = Header(default=None)):
     """Get admin dashboard statistics"""
     try:
         # TODO: Verify admin role
@@ -1208,7 +1208,7 @@ async def admin_stats(authorization: str = None):
 # ── Model management ──────────────────────────────────────────────────────────
 
 @app.get("/api/admin/models")
-async def list_available_models(authorization: str = None):
+async def list_available_models(authorization: str = Header(default=None)):
     """
     Return all Claude models the admin can assign to users.
     The frontend uses this list to populate the model selector dropdown.
@@ -1226,7 +1226,7 @@ async def list_available_models(authorization: str = None):
 async def admin_update_user_model(
     user_id: str,
     body: dict,
-    authorization: str = None,
+    authorization: str = Header(default=None),
 ):
     """
     Set the Claude model for a specific user (admin only).
@@ -1280,7 +1280,7 @@ async def admin_update_user_model(
 
 
 @app.get("/api/admin/users/{user_id}/model")
-async def admin_get_user_model(user_id: str, authorization: str = None):
+async def admin_get_user_model(user_id: str, authorization: str = Header(default=None)):
     """Get the current model assignment + change history for a user."""
     try:
         admin_id = get_current_user_id(authorization)
@@ -1318,7 +1318,7 @@ async def admin_get_user_model(user_id: str, authorization: str = None):
 async def bulk_generate_cv(
     request: BulkGenerationRequest,
     background_tasks: BackgroundTasks,
-    authorization: str = None,
+    authorization: str = Header(default=None),
 ):
     """
     Bulk generate: one candidate (1–3 CVs) against up to 20 JDs in a single
@@ -1433,7 +1433,7 @@ def _process_bulk_item(
 
 
 @app.get("/api/cv/bulk-generate/{bulk_job_id}")
-async def get_bulk_job_status(bulk_job_id: str, authorization: str = None):
+async def get_bulk_job_status(bulk_job_id: str, authorization: str = Header(default=None)):
     """Get status of a bulk generation job."""
     try:
         user_id  = get_current_user_id(authorization)
@@ -1449,7 +1449,7 @@ async def get_bulk_job_status(bulk_job_id: str, authorization: str = None):
 
 
 @app.get("/api/cv/bulk-jobs")
-async def list_bulk_jobs(authorization: str = None):
+async def list_bulk_jobs(authorization: str = Header(default=None)):
     """List all bulk generation jobs for the current user."""
     try:
         user_id = get_current_user_id(authorization)
@@ -1468,7 +1468,7 @@ async def list_bulk_jobs(authorization: str = None):
 @app.post("/api/submissions", response_model=SubmissionResponse)
 async def create_submission_endpoint(
     request: SubmissionCreateRequest,
-    authorization: str = None,
+    authorization: str = Header(default=None),
 ):
     """Manually create a submission record (auto-created on generation success)."""
     try:
@@ -1498,7 +1498,7 @@ async def create_submission_endpoint(
 @app.get("/api/submissions", response_model=SubmissionListResponse)
 async def list_submissions_endpoint(
     status: str = None,
-    authorization: str = None,
+    authorization: str = Header(default=None),
 ):
     """List all submissions for the current user, optionally filtered by status."""
     try:
@@ -1518,7 +1518,7 @@ async def list_submissions_endpoint(
 
 
 @app.get("/api/submissions/{submission_id}", response_model=SubmissionResponse)
-async def get_submission_endpoint(submission_id: str, authorization: str = None):
+async def get_submission_endpoint(submission_id: str, authorization: str = Header(default=None)):
     """Get a single submission."""
     try:
         user_id = get_current_user_id(authorization)
@@ -1536,7 +1536,7 @@ async def get_submission_endpoint(submission_id: str, authorization: str = None)
 async def update_submission_endpoint(
     submission_id: str,
     request: SubmissionUpdateRequest,
-    authorization: str = None,
+    authorization: str = Header(default=None),
 ):
     """
     Update a submission's status or notes.
@@ -1575,7 +1575,7 @@ async def update_submission_endpoint(
 
 
 @app.delete("/api/submissions/{submission_id}")
-async def delete_submission_endpoint(submission_id: str, authorization: str = None):
+async def delete_submission_endpoint(submission_id: str, authorization: str = Header(default=None)):
     """Delete a submission."""
     try:
         user_id = get_current_user_id(authorization)

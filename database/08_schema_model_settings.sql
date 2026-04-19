@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS model_settings (
 );
 
 -- Timestamp trigger for automatic updated_at
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS update_model_settings_updated_at ON model_settings;
 CREATE TRIGGER update_model_settings_updated_at
 BEFORE UPDATE ON model_settings
 FOR EACH ROW

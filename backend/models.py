@@ -16,7 +16,7 @@ class RegisterRequest(BaseModel):
     full_name: str
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str          # accepts email address OR full name
     password: str
 
 class AuthResponse(BaseModel):

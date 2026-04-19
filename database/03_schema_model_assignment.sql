@@ -22,8 +22,12 @@ ALTER TABLE users
 
 -- Add a check constraint so only known models can be stored
 ALTER TABLE users
+  DROP CONSTRAINT IF EXISTS chk_allowed_model;
+
+ALTER TABLE users
   ADD CONSTRAINT chk_allowed_model CHECK (
     allowed_model IN (
+      'claude-haiku-4-5',
       'claude-haiku-4-5-20251001',
       'claude-sonnet-4-6',
       'claude-opus-4-6'
