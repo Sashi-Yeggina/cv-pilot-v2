@@ -19,11 +19,12 @@ def get_storage_client() -> Client:
 # ════════════════════════════════════════════════════════════════
 
 def upload_cv(user_id: str, bucket: str, file_path: str, file_data: bytes) -> Optional[str]:
-    """Upload CV file to Supabase Storage"""
+    """Upload CV file to Supabase Storage.
+    file_path is already the full path (e.g. user_id/filename) — do NOT prefix again.
+    """
     try:
-        storage_path = f"{user_id}/{file_path}"
-        get_storage_client().storage.from_(bucket).upload(storage_path, file_data)
-        return storage_path
+        get_storage_client().storage.from_(bucket).upload(file_path, file_data)
+        return file_path
     except Exception as e:
         print(f"Error uploading file: {e}")
         return None
