@@ -21,4 +21,4 @@ RUN rm -f .env
 EXPOSE 8000
 
 # Use $PORT from Railway; fall back to 8000 locally
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["/bin/sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
