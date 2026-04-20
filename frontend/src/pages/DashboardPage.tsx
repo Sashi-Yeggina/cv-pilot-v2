@@ -150,19 +150,38 @@ export default function DashboardPage() {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Read uploadType directly from the select at upload time to avoid stale closure
+    const currentType = (document.getElementById('cv-type-select') as HTMLSelectElement)?.value || uploadType;
 
     setUploadingFile(true);
-    try {
-      await cvAPI.upload(file, uploadType);
-      toast.success('CV uploaded successfully!');
-      loadCVs();
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Upload failed');
-    } finally {
-      setUploadingFile(false);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const file of files) {
+      try {
+        await cvAPI.upload(file, currentType);
+        successCount++;
+      } catch (error: any) {
+        failCount++;
+        toast.error(`${file.name}: ${error.response?.data?.detail || 'Upload failed'}`);
+      }
     }
+
+    if (successCount > 0) {
+      toast.success(
+        successCount === 1
+          ? `${files[0].name} uploaded as ${currentType === 'template' ? 'Template' : 'Base CV'}`
+          : `${successCount} files uploaded successfully`
+      );
+      loadCVs();
+    }
+
+    // Reset the input so the same file can be re-selected if needed
+    e.target.value = '';
+    setUploadingFile(false);
   };
 
   const handleLogout = () => {
@@ -210,6 +229,7 @@ export default function DashboardPage() {
               <label className="flex-1">
                 <span className="block text-sm font-medium mb-2">CV Type</span>
                 <select
+                  id="cv-type-select"
                   value={uploadType}
                   onChange={(e) => setUploadType(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -223,6 +243,7 @@ export default function DashboardPage() {
                 <input
                   type="file"
                   accept=".docx"
+                  multiple
                   onChange={handleFileUpload}
                   disabled={uploadingFile}
                   className="hidden"
@@ -233,8 +254,11 @@ export default function DashboardPage() {
                   disabled={uploadingFile}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
-                  {uploadingFile ? 'Uploading...' : 'Upload DOCX File'}
+                  {uploadingFile ? 'Uploading...' : uploadType === 'template' ? 'Upload Template' : 'Upload DOCX Files'}
                 </button>
+                {uploadType === 'base' && (
+                  <p className="text-xs text-gray-400 mt-1">You can select multiple files at once</p>
+                )}
               </label>
             </div>
           </div>
