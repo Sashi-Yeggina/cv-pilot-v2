@@ -42,14 +42,20 @@ client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
 # PRICING  (USD per 1 M tokens)
 # ─────────────────────────────────────────────────────────────────────────────
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    "claude-haiku-4-5-20251001": {"input":  0.80, "output":  4.00},
-    "claude-sonnet-4-6":         {"input":  3.00, "output": 15.00},
-    "claude-opus-4-6":           {"input": 15.00, "output": 75.00},
+    # Claude (Anthropic) — per 1M tokens USD
+    "claude-haiku-4-5":  {"input":  0.80, "output":  4.00},
+    "claude-sonnet-4-6": {"input":  3.00, "output": 15.00},
+    "claude-opus-4-6":   {"input": 15.00, "output": 75.00},
+    # OpenAI 2026 lineup — per 1M tokens USD
+    "gpt-4.1-nano":      {"input":  0.10, "output":  0.40},
+    "gpt-4.1-mini":      {"input":  0.40, "output":  1.60},
+    "gpt-4.1":           {"input":  2.00, "output":  8.00},
+    "gpt-5.4-mini":      {"input":  0.75, "output":  4.50},
 }
 
 def _calc_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Return estimated USD cost for a single API call."""
-    pricing = MODEL_PRICING.get(model, MODEL_PRICING["claude-haiku-4-5-20251001"])
+    pricing = MODEL_PRICING.get(model, MODEL_PRICING["claude-haiku-4-5"])
     return (
         input_tokens  / 1_000_000 * pricing["input"] +
         output_tokens / 1_000_000 * pricing["output"]
@@ -78,8 +84,8 @@ LIBRARY_PATCH_THRESHOLD = 0.55   # use library + small patch API call
 
 def route_to_provider(model_id: str) -> str:
     """Determine which provider (claude or openai) to use for a model"""
-    claude_models = {"claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6", "claude-haiku-4-5"}
-    openai_models = {"gpt-3.5-turbo", "gpt-4o", "gpt-4-turbo"}
+    claude_models = {"claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-6"}
+    openai_models = {"gpt-4.1-nano", "gpt-4.1-mini", "gpt-4.1", "gpt-5.4-mini"}
 
     if model_id in claude_models:
         return "claude"

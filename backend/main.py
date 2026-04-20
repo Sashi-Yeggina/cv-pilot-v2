@@ -91,10 +91,18 @@ app = FastAPI(
 # ════════════════════════════════════════════════════════════════
 
 _cors_origins = [settings.FRONTEND_URL]
-# Also allow the alternate Vite dev port so either npm run dev port works
-for _extra in ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"]:
-    if _extra not in _cors_origins:
-        _cors_origins.append(_extra)
+# Allow additional origins from EXTRA_CORS_ORIGINS env var (comma-separated)
+# Use this in prod to add your Vercel URL, custom domain, etc.
+# e.g. EXTRA_CORS_ORIGINS=https://cvpilot.vercel.app,https://cvpilot.app
+_extra_origins = os.getenv("EXTRA_CORS_ORIGINS", "")
+for _o in [o.strip() for o in _extra_origins.split(",") if o.strip()]:
+    if _o not in _cors_origins:
+        _cors_origins.append(_o)
+# Also allow local dev ports
+if settings.ENV == "development":
+    for _extra in ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000", "http://127.0.0.1:5173"]:
+        if _extra not in _cors_origins:
+            _cors_origins.append(_extra)
 
 app.add_middleware(
     CORSMiddleware,
@@ -186,6 +194,46 @@ async def logout(token: str = Depends(lambda: None)):
     """User logout"""
     result = logout_user(token)
     return result
+
+@app.get("/api/me")
+async def get_me(authorization: str = Header(None)):
+    """Return current user's profile including allowed models — called on dashboard load."""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        token = authorization.replace("Bearer ", "")
+        user_data = verify_token(token)
+        if not user_data:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        user_id = user_data.get("sub") or user_data.get("user_id")
+        user = get_user(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Build allowed_models list from DB field (comma-separated or JSON stored by admin)
+        allowed_model  = user.get("allowed_model", DEFAULT_MODEL)
+        raw_allowed    = user.get("allowed_models")  # optional column
+        if raw_allowed:
+            try:
+                import json
+                allowed_models = json.loads(raw_allowed) if isinstance(raw_allowed, str) else raw_allowed
+            except Exception:
+                allowed_models = None
+        else:
+            allowed_models = None  # None means all models allowed
+
+        return {
+            "user_id":        user_id,
+            "email":          user.get("email", ""),
+            "role":           user.get("role", "user"),
+            "allowed_model":  allowed_model,
+            "allowed_models": allowed_models,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[/api/me] error: {e}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 # ════════════════════════════════════════════════════════════════
 # CV ENDPOINTS
@@ -868,16 +916,22 @@ def process_generation_sync(generation_id: str, user_id: str, request: Generatio
             }
         )
 
+        # Safe fire-and-forget broadcast — runs in the event loop without blocking
         import asyncio
-        asyncio.run(manager.broadcast("generation_completed", {
-            "user_id":           user_id,
-            "generation_id":     generation_id,
-            "status":            "success",
-            "strategy":          strategy,
-            "coverage_pct":      round(coverage_pct * 100, 1),
-            "api_calls_saved":   api_calls_saved,
-            "processing_time_ms":processing_time,
-        }))
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(manager.broadcast("generation_completed", {
+                    "user_id":            user_id,
+                    "generation_id":      generation_id,
+                    "status":             "success",
+                    "strategy":           strategy,
+                    "coverage_pct":       round(coverage_pct * 100, 1),
+                    "api_calls_saved":    api_calls_saved,
+                    "processing_time_ms": processing_time,
+                }))
+        except Exception:
+            pass  # WebSocket broadcast is non-critical — never block generation on it
 
     except Exception as e:
         print(f"[gen:{generation_id}] Generation error: {e}")
@@ -969,7 +1023,10 @@ async def get_activity_history(authorization: str = Header(default=None)):
 async def admin_list_users(authorization: str = Header(default=None)):
     """List all users (admin)"""
     try:
-        # TODO: Verify admin role
+        admin_id = get_current_user_id(authorization)
+        admin = get_user(admin_id)
+        if not admin or admin.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         users = get_all_users()
 
         return UserListResponse(
@@ -991,7 +1048,10 @@ async def admin_list_users(authorization: str = Header(default=None)):
 async def admin_user_activity(user_id: str, authorization: str = Header(default=None)):
     """Get specific user's activity (admin)"""
     try:
-        # TODO: Verify admin role
+        admin_id = get_current_user_id(authorization)
+        admin = get_user(admin_id)
+        if not admin or admin.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         activities = get_user_activity(user_id)
 
         return ActivityStreamResponse(
@@ -1012,7 +1072,10 @@ async def admin_user_activity(user_id: str, authorization: str = Header(default=
 async def admin_activity_stream(authorization: str = Header(default=None)):
     """Get all activity logs (admin)"""
     try:
-        # TODO: Verify admin role
+        admin_id = get_current_user_id(authorization)
+        admin = get_user(admin_id)
+        if not admin or admin.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         activities = get_all_activity()
 
         return ActivityStreamResponse(
@@ -1203,7 +1266,10 @@ async def admin_user_usage(user_id: str, authorization: str = Header(default=Non
 async def admin_stats(authorization: str = Header(default=None)):
     """Get admin dashboard statistics"""
     try:
-        # TODO: Verify admin role
+        admin_id = get_current_user_id(authorization)
+        admin = get_user(admin_id)
+        if not admin or admin.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
         stats = get_admin_stats()
 
         return AdminStatsResponse(
@@ -1292,6 +1358,51 @@ async def admin_update_user_model(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.patch("/api/admin/users/{user_id}/allowed-models")
+async def admin_update_user_allowed_models(
+    user_id: str,
+    body: dict,
+    authorization: str = Header(default=None),
+):
+    """
+    Set which models a user is allowed to access (admin only).
+
+    Request body:
+        { "allowed_models": ["claude-haiku-4-5", "gpt-4.1-mini"] }
+        Pass an empty list [] to remove restrictions (all models allowed).
+    """
+    try:
+        admin_id = get_current_user_id(authorization)
+        admin = get_user(admin_id)
+        if not admin or admin.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required")
+
+        allowed_models = body.get("allowed_models", [])
+        valid_ids = {m["id"] for m in AVAILABLE_MODELS}
+        invalid = [m for m in allowed_models if m not in valid_ids]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid model IDs: {invalid}")
+
+        ok = update_user_allowed_models(
+            user_id=user_id,
+            allowed_models=allowed_models,
+            admin_email=admin["email"],
+        )
+        if not ok:
+            raise HTTPException(status_code=500, detail="Failed to update allowed models")
+
+        return {
+            "success":        True,
+            "user_id":        user_id,
+            "allowed_models": allowed_models,
+            "message":        f"Access updated: {len(allowed_models)} model(s) allowed" if allowed_models else "All models allowed",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/admin/users/{user_id}/model")
 async def admin_get_user_model(user_id: str, authorization: str = Header(default=None)):
     """Get the current model assignment + change history for a user."""
@@ -1307,14 +1418,23 @@ async def admin_get_user_model(user_id: str, authorization: str = Header(default
 
         history = get_model_change_history(user_id)
 
+        # Deserialise allowed_models (stored as JSON string in DB)
+        import json as _json
+        raw_allowed = user.get("allowed_models")
+        try:
+            allowed_models = _json.loads(raw_allowed) if isinstance(raw_allowed, str) else raw_allowed
+        except Exception:
+            allowed_models = None
+
         return {
-            "user_id":       user_id,
-            "email":         user["email"],
-            "current_model": user.get("allowed_model", DEFAULT_MODEL),
-            "model_label":   user.get("model_label", "Haiku (Fast · Low Cost)"),
-            "updated_at":    user.get("model_updated_at"),
-            "updated_by":    user.get("model_updated_by"),
-            "history":       history,
+            "user_id":        user_id,
+            "email":          user["email"],
+            "current_model":  user.get("allowed_model", DEFAULT_MODEL),
+            "allowed_models": allowed_models,   # null = all allowed; list = restricted
+            "model_label":    user.get("model_label", "Haiku (Fast · Low Cost)"),
+            "updated_at":     user.get("model_updated_at"),
+            "updated_by":     user.get("model_updated_by"),
+            "history":        history,
         }
 
     except HTTPException:

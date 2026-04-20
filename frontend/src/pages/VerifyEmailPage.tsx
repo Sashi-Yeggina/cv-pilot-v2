@@ -1,12 +1,7 @@
 import { useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { createClient } from '@supabase/supabase-js';
 import toast from 'react-hot-toast';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL || '',
-  import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-);
+import { supabase } from '../lib/supabase';
 
 export default function VerifyEmailPage() {
   const location = useLocation();

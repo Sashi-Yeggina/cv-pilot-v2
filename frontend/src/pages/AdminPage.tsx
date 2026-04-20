@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { adminAPI, generationAPI } from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
+import { AdminModelManager } from '../components/AdminModelManager';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -85,73 +86,178 @@ function fmtTokens(n: number) {
 
 // ─── Model Selector Modal ────────────────────────────────────────────────────
 
+// All available models shown in the modal, grouped by provider
+const ALL_MODAL_MODELS = [
+  // Claude (Anthropic)
+  { id: 'claude-haiku-4-5',          label: 'Claude Haiku',   provider: 'Claude',  tier: 'standard', description: 'Fastest & cheapest — great for most CVs',    approx_cost: '~$0.001 / CV' },
+  { id: 'claude-sonnet-4-6',         label: 'Claude Sonnet',  provider: 'Claude',  tier: 'premium',  description: 'Balanced quality & speed — recommended',       approx_cost: '~$0.003 / CV' },
+  { id: 'claude-opus-4-6',           label: 'Claude Opus',    provider: 'Claude',  tier: 'elite',    description: 'Highest quality — best for senior/exec roles', approx_cost: '~$0.015 / CV' },
+  // OpenAI (2026 lineup)
+  { id: 'gpt-4.1-nano',  label: 'GPT-4.1 Nano',  provider: 'OpenAI', tier: 'standard', description: 'Ultra cheap — bulk generation, entry-level CVs',         approx_cost: '~$0.002 / CV' },
+  { id: 'gpt-4.1-mini',  label: 'GPT-4.1 Mini',  provider: 'OpenAI', tier: 'standard', description: 'Best value — great quality at ~1 cent/CV. Recommended', approx_cost: '~$0.007 / CV' },
+  { id: 'gpt-4.1',       label: 'GPT-4.1',        provider: 'OpenAI', tier: 'premium',  description: 'High-quality rewrites — best for premium users',         approx_cost: '~$0.050 / CV' },
+  { id: 'gpt-5.4-mini',  label: 'GPT-5.4 Mini',   provider: 'OpenAI', tier: 'premium',  description: 'Better reasoning & formatting than 4.1 mini',            approx_cost: '~$0.020 / CV' },
+];
+
+const providerDotColor: Record<string, string> = {
+  Claude: 'bg-orange-500',
+  OpenAI: 'bg-cyan-500',
+};
+
 function ModelModal({
-  user, models, onClose, onSave,
+  user, onClose, onSave,
 }: {
   user: UserRow;
-  models: ModelOption[];
+  models: ModelOption[];  // kept for interface compat but we use ALL_MODAL_MODELS directly
   onClose: () => void;
   onSave: (userId: string, model: string, reason: string) => Promise<void>;
 }) {
-  const [selected, setSelected] = useState(user.allowed_model || 'claude-haiku-4-5-20251001');
-  const [reason, setReason]     = useState('');
-  const [saving, setSaving]     = useState(false);
+  // Which models the user is allowed to access (checkboxes) — loaded from backend
+  const [allowedModels, setAllowedModels] = useState<string[]>(ALL_MODAL_MODELS.map(m => m.id));
+  const [loadingAllowed, setLoadingAllowed] = useState(true);
+  // Which model is the default (radio)
+  const [defaultModel, setDefaultModel] = useState(user.allowed_model || 'claude-haiku-4-5');
+  const [reason, setReason] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  // Load current allowed_models from backend on open
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await adminAPI.getUser(user.id);  // GET /api/admin/users/{id}/model
+        const data = res.data;
+        // data.allowed_models is null (all) or array of IDs
+        if (Array.isArray(data.allowed_models) && data.allowed_models.length > 0) {
+          setAllowedModels(data.allowed_models);
+        } else {
+          setAllowedModels(ALL_MODAL_MODELS.map(m => m.id));  // all enabled
+        }
+        if (data.current_model) setDefaultModel(data.current_model);
+      } catch {
+        // If endpoint not available, fall back to all-enabled
+        setAllowedModels(ALL_MODAL_MODELS.map(m => m.id));
+      } finally {
+        setLoadingAllowed(false);
+      }
+    })();
+  }, [user.id]);
+
+  const toggleAllowed = (modelId: string) => {
+    const next = allowedModels.includes(modelId)
+      ? allowedModels.filter(id => id !== modelId)
+      : [...allowedModels, modelId];
+    setAllowedModels(next);
+    // If unchecking the current default, move default to first remaining
+    if (defaultModel === modelId) {
+      const remaining = next.filter(id => id !== modelId);
+      if (remaining.length > 0) setDefaultModel(remaining[0]);
+    }
+  };
 
   const handleSave = async () => {
+    if (allowedModels.length === 0) return;
     setSaving(true);
-    await onSave(user.id, selected, reason);
-    setSaving(false);
+    try {
+      // 1. Save the allowed models list to backend (real cross-session restrictions)
+      await adminAPI.updateUserAllowedModels(user.id, allowedModels);
+      // 2. Save the default model to backend
+      await onSave(user.id, defaultModel, reason);
+    } finally {
+      setSaving(false);
+    }
   };
+
+  // Group models by provider for display
+  const providers = ['Claude', 'OpenAI'];
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b flex justify-between items-start">
           <div>
-            <h3 className="text-lg font-bold">Assign Claude Model</h3>
+            <h3 className="text-lg font-bold">Model Access for User</h3>
             <p className="text-sm text-gray-500">{user.full_name || user.email}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
         </div>
 
-        {user.model_updated_by && (
-          <div className="px-6 py-2 bg-gray-50 text-xs text-gray-500 flex items-center gap-2">
-            Current: <ModelBadge model={user.allowed_model} label={user.model_label} />
-            — set by {user.model_updated_by}
-          </div>
+        {/* Column headers */}
+        <div className="px-6 pt-4 pb-2 grid grid-cols-[1fr_auto_auto] gap-2 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+          <span>Model</span>
+          <span className="text-center w-16">Can Use</span>
+          <span className="text-center w-16">Default</span>
+        </div>
+
+        {loadingAllowed && (
+          <div className="px-6 py-4 text-sm text-gray-400 text-center">Loading current access settings…</div>
         )}
 
-        <div className="px-6 py-4 space-y-3">
-          {models.map(m => (
-            <label key={m.id} className={`flex items-start gap-3 p-3 rounded-xl border-2 cursor-pointer transition ${
-              selected === m.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-            }`}>
-              <input type="radio" name="model" value={m.id} checked={selected === m.id}
-                onChange={() => setSelected(m.id)} className="mt-0.5 accent-blue-600" />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-sm">{m.label}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${tierStyle[m.tier]}`}>{m.tier}</span>
+        <div className={`px-6 pb-2 space-y-4 ${loadingAllowed ? 'opacity-40 pointer-events-none' : ''}`}>
+          {providers.map(provider => {
+            const providerModels = ALL_MODAL_MODELS.filter(m => m.provider === provider);
+            return (
+              <div key={provider}>
+                {/* Provider label */}
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`w-2 h-2 rounded-full ${providerDotColor[provider]}`}></span>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{provider}</span>
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5">{m.description}</p>
-                <p className="text-xs text-gray-400 mt-0.5 font-mono">{m.approx_cost}</p>
+                <div className="space-y-2">
+                  {providerModels.map(m => {
+                    const isAllowed = allowedModels.includes(m.id);
+                    const isDefault = defaultModel === m.id;
+                    return (
+                      <div key={m.id} className={`grid grid-cols-[1fr_auto_auto] gap-2 items-center p-3 rounded-xl border-2 transition ${
+                        isAllowed ? 'border-blue-200 bg-blue-50' : 'border-gray-100 bg-gray-50 opacity-50'
+                      }`}>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-sm">{m.label}</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${tierStyle[m.tier]}`}>{m.tier}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">{m.description}</p>
+                          <p className="text-xs text-gray-400 font-mono mt-0.5">{m.approx_cost}</p>
+                        </div>
+                        <div className="w-16 flex justify-center">
+                          <input type="checkbox" checked={isAllowed} onChange={() => toggleAllowed(m.id)}
+                            className="w-5 h-5 accent-blue-600 cursor-pointer" />
+                        </div>
+                        <div className="w-16 flex justify-center">
+                          <input type="radio" name="default_model" checked={isDefault}
+                            disabled={!isAllowed} onChange={() => setDefaultModel(m.id)}
+                            className="w-5 h-5 accent-blue-600 cursor-pointer disabled:opacity-30"
+                            title={!isAllowed ? 'Enable the model first' : 'Set as default'} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </label>
-          ))}
+            );
+          })}
         </div>
+
+        <p className="px-6 pb-2 text-xs text-gray-400">
+          ✓ <b>Can Use</b> = model appears on user's dashboard &nbsp;·&nbsp;
+          ◉ <b>Default</b> = pre-selected when user opens Generate page
+        </p>
+
+        {allowedModels.length === 0 && (
+          <p className="px-6 py-2 text-xs text-red-500 font-semibold">⚠ At least one model must be enabled.</p>
+        )}
 
         <div className="px-6 pb-4">
           <label className="block text-sm font-medium text-gray-700 mb-1">Reason (saved to audit log)</label>
           <input type="text" value={reason} onChange={e => setReason(e.target.value)}
-            placeholder="e.g. Senior consultant, needs higher quality output"
+            placeholder="e.g. Senior consultant, access to all models"
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
 
         <div className="px-6 py-4 border-t flex gap-3 justify-end">
           <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-          <button onClick={handleSave} disabled={saving || selected === user.allowed_model}
+          <button onClick={handleSave} disabled={saving || allowedModels.length === 0}
             className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-semibold">
-            {saving ? 'Saving…' : 'Save Model'}
+            {saving ? 'Saving…' : 'Save Access'}
           </button>
         </div>
       </div>
@@ -359,7 +465,7 @@ export default function AdminPage() {
   const [loading,      setLoading]      = useState(true);
   const [editingUser,  setEditingUser]  = useState<UserRow | null>(null);
   const [showGenerate, setShowGenerate] = useState(false);
-  const [activeTab,    setActiveTab]    = useState<'users' | 'usage' | 'activity' | 'stats'>('users');
+  const [activeTab,    setActiveTab]    = useState<'users' | 'usage' | 'activity' | 'stats' | 'models'>('users');
 
   const navigate  = useNavigate();
   const { logout } = useAuthStore();
@@ -419,6 +525,7 @@ export default function AdminPage() {
 
   const tabs: { id: typeof activeTab; label: string }[] = [
     { id: 'users',    label: 'Users' },
+    { id: 'models',   label: 'Models' },
     { id: 'usage',    label: 'Usage & Cost' },
     { id: 'activity', label: 'Activity' },
     { id: 'stats',    label: 'Stats' },
@@ -676,6 +783,61 @@ export default function AdminPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODELS TAB ── */}
+        {activeTab === 'models' && (
+          <div>
+            {/* Simple inline model toggle — no dependency on model_settings DB table */}
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b">
+                <h2 className="font-bold text-lg">Model Availability</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Toggle which models users can choose from. Changes take effect immediately.</p>
+              </div>
+              <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                {[
+                  { id: 'claude-haiku-4-5-20251001',  label: 'Claude Haiku',  desc: 'Fastest & cheapest',       badge: 'Standard', color: 'green'  },
+                  { id: 'claude-sonnet-4-6',           label: 'Claude Sonnet', desc: 'Balanced quality & speed', badge: 'Premium',  color: 'yellow' },
+                  { id: 'claude-opus-4-6',             label: 'Claude Opus',   desc: 'Highest quality',          badge: 'Elite',    color: 'purple' },
+                ].map(m => {
+                  const key = `model_enabled_${m.id}`;
+                  const enabled = localStorage.getItem(key) !== 'false';
+                  return (
+                    <div key={m.id} className={`rounded-xl border-2 p-5 transition-all ${enabled ? 'border-blue-300 bg-blue-50' : 'border-gray-200 bg-gray-50 opacity-60'}`}>
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            m.color === 'green'  ? 'bg-green-100 text-green-800' :
+                            m.color === 'yellow' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-purple-100 text-purple-800'
+                          }`}>{m.badge}</span>
+                          <p className="font-bold mt-2">{m.label}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{m.desc}</p>
+                        </div>
+                        {/* Toggle */}
+                        <label className="relative cursor-pointer flex-shrink-0">
+                          <input type="checkbox" className="sr-only peer" defaultChecked={enabled}
+                            onChange={e => {
+                              localStorage.setItem(key, e.target.checked ? 'true' : 'false');
+                              toast.success(`${m.label} ${e.target.checked ? 'enabled' : 'disabled'} for users`);
+                              // Force re-render
+                              setActiveTab('users');
+                              setTimeout(() => setActiveTab('models'), 10);
+                            }}
+                          />
+                          <div className="w-10 h-5 bg-gray-300 rounded-full peer-checked:bg-blue-600 transition-colors" />
+                          <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-5" />
+                        </label>
+                      </div>
+                      <p className={`text-xs font-semibold mt-2 ${enabled ? 'text-blue-600' : 'text-gray-400'}`}>
+                        {enabled ? '✓ Visible to users' : '✗ Hidden from users'}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}

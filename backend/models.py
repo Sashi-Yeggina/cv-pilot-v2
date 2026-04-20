@@ -25,6 +25,8 @@ class AuthResponse(BaseModel):
     user_id: str
     email: str
     role: str
+    allowed_model: Optional[str] = None        # default model set by admin
+    allowed_models: Optional[List[str]] = None  # which models this user can access
 
 class TokenData(BaseModel):
     user_id: Optional[str] = None

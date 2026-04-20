@@ -4,7 +4,7 @@
  */
 
 import axios, { AxiosInstance } from 'axios';
-import { useAuthStore } from '../stores/authStore';
+import { useAuthStore } from '../store/authStore';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -138,18 +138,32 @@ export { useAuthStore };
 
 // Admin API
 export const adminAPI = {
-  listUsers: () => api.get('/api/admin/users'),
-  getUserActivity: (userId: string) => api.get(`/api/admin/users/${userId}/activity`),
-  getActivityStream: () => api.get('/api/admin/activity'),
-  getStats: () => api.get('/api/admin/stats'),
-  getUsage: () => api.get('/api/admin/usage'),
-  getUserUsage: (userId: string) => api.get(`/api/admin/users/${userId}/usage`),
-  generateCV: (data: any) => api.post('/api/admin/generate', data),
+  // aliases used by AdminPage
+  getUsers:          ()                                           => api.get('/api/admin/users'),
+  listUsers:         ()                                           => api.get('/api/admin/users'),
+  getActivityStream: ()                                           => api.get('/api/admin/activity'),
+  getStats:          ()                                           => api.get('/api/admin/stats'),
+  getUsage:          ()                                           => api.get('/api/admin/usage'),
+  listModels:        ()                                           => api.get('/api/admin/models'),
+  updateUserModel:   (userId: string, model: string, reason: string) =>
+                       api.patch(`/api/admin/users/${userId}/model`, { model, reason }),
+  getUserCVs:        (userId: string)                            => api.get(`/api/admin/users/${userId}/cvs`),
+  generateForUser:   (userId: string, jdText: string, cvIds: string[], templateId?: string) =>
+                       api.post('/api/admin/generate', { user_id: userId, jd_text: jdText, base_cv_ids: cvIds, template_cv_id: templateId }),
+  getUserActivity:   (userId: string)                            => api.get(`/api/admin/users/${userId}/activity`),
+  getUserUsage:      (userId: string)                            => api.get(`/api/admin/users/${userId}/usage`),
+  updateUserAllowedModels: (userId: string, allowedModels: string[]) =>
+    api.patch(`/api/admin/users/${userId}/allowed-models`, { allowed_models: allowedModels }),
 };
 
 // Activity API
 export const activityAPI = {
   getHistory: () => api.get('/api/history'),
+};
+
+// User API
+export const userAPI = {
+  getMe: () => api.get('/api/me'),
 };
 
 // Auth API

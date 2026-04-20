@@ -40,7 +40,7 @@ def get_user(user_id: str) -> Optional[Dict]:
         print(f"Error getting user: {e}")
         return None
 
-def get_user_model(user_id: str, default: str = "claude-haiku-4-5-20251001") -> str:
+def get_user_model(user_id: str, default: str = "claude-haiku-4-5") -> str:
     """
     Return the Claude model assigned to this user by the admin.
     Falls back to the default (Haiku) if no model is set.
@@ -70,14 +70,19 @@ def update_user_model(
     Also writes an audit row to model_change_log.
     """
     VALID_MODELS = {
-        "claude-haiku-4-5-20251001",
-        "claude-sonnet-4-6",
-        "claude-opus-4-6",
+        # Claude (Anthropic)
+        "claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-6",
+        # OpenAI 2026 lineup
+        "gpt-4.1-nano", "gpt-4.1-mini", "gpt-4.1", "gpt-5.4-mini",
     }
     MODEL_LABELS = {
-        "claude-haiku-4-5-20251001": "Haiku (Fast · Low Cost)",
-        "claude-sonnet-4-6":         "Sonnet (Balanced)",
-        "claude-opus-4-6":           "Opus (Highest Quality)",
+        "claude-haiku-4-5":  "Claude Haiku (Fast · Low Cost)",
+        "claude-sonnet-4-6": "Claude Sonnet (Balanced)",
+        "claude-opus-4-6":   "Claude Opus (Highest Quality)",
+        "gpt-4.1-nano":      "GPT-4.1 Nano (Ultra Cheap)",
+        "gpt-4.1-mini":      "GPT-4.1 Mini (Best Value ✅)",
+        "gpt-4.1":           "GPT-4.1 (Premium)",
+        "gpt-5.4-mini":      "GPT-5.4 Mini (Better Quality)",
     }
 
     if new_model not in VALID_MODELS:
@@ -110,6 +115,29 @@ def update_user_model(
         return True
     except Exception as e:
         print(f"Error updating user model: {e}")
+        return False
+
+def update_user_allowed_models(
+    user_id: str,
+    allowed_models: List[str],
+    admin_email: str,
+) -> bool:
+    """
+    Save the list of models a user is allowed to access (admin only).
+    Stores as a JSON array in the `allowed_models` column of the users table.
+    Passing an empty list or None removes the restriction (all models allowed).
+    """
+    import json
+    try:
+        value = json.dumps(allowed_models) if allowed_models else None
+        get_supabase().table("users").update({
+            "allowed_models":   value,
+            "model_updated_at": datetime.utcnow().isoformat(),
+            "model_updated_by": admin_email,
+        }).eq("id", user_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error updating allowed_models for {user_id}: {e}")
         return False
 
 def get_model_change_history(user_id: str, limit: int = 20) -> List[Dict]:
@@ -558,7 +586,7 @@ def save_assembly_log(
     tokens_used: int,
     bullet_ids_used: List[str],
     # v4 additions — token breakdown + cost
-    model_used: str = "claude-haiku-4-5-20251001",
+    model_used: str = "claude-haiku-4-5",
     input_tokens: int = 0,
     output_tokens: int = 0,
     estimated_cost_usd: float = 0.0,
@@ -621,7 +649,7 @@ def get_user_usage_stats(user_id: str) -> Dict:
         # Cost by model
         cost_by_model: Dict[str, float] = {}
         for r in logs:
-            m = r.get("model_used", "claude-haiku-4-5-20251001")
+            m = r.get("model_used", "claude-haiku-4-5")
             cost_by_model[m] = cost_by_model.get(m, 0.0) + r.get("estimated_cost_usd", 0.0)
 
         avg_coverage = (
@@ -703,7 +731,7 @@ def get_all_users_usage_stats(limit: int = 200) -> List[Dict]:
                 "email":                 u["email"],
                 "full_name":             u.get("full_name"),
                 "role":                  u.get("role", "user"),
-                "allowed_model":         u.get("allowed_model", "claude-haiku-4-5-20251001"),
+                "allowed_model":         u.get("allowed_model", "claude-haiku-4-5"),
                 "model_label":           u.get("model_label", "Haiku (Fast · Low Cost)"),
                 "total_generations":     gc,
                 "total_input_tokens":    a["total_input_tokens"],
