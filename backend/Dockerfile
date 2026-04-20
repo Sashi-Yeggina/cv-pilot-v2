@@ -17,8 +17,8 @@ COPY . .
 # Don't bundle .env — secrets come from Railway environment variables
 RUN rm -f .env
 
-# Expose port (Railway sets $PORT automatically)
+# Expose default port
 EXPOSE 8000
 
-# Use $PORT from Railway; fall back to 8000 locally
-CMD ["/bin/sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Shell form so $PORT is expanded by the shell at runtime
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
