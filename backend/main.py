@@ -374,7 +374,7 @@ async def match_cv_to_jd(
         jd_profile = parse_jd(jd_text, model=user_model)
 
         # 2. Extract required skills with zero-cost keyword matching
-        jd_skills = extract_jd_skills_locally(jd_text, jd_profile)
+        jd_skills = extract_jd_skills_locally(jd_text)
 
         # 3. Load the user's bullet library
         library_bullets = get_user_library_bullets(user_id)
@@ -701,7 +701,7 @@ def process_generation_sync(generation_id: str, user_id: str, request: Generatio
             return
 
         # ── Step 5: Extract JD skills locally (no API) ───────────────────────
-        jd_skills = extract_jd_skills_locally(jd["full_text"], jd_profile)
+        jd_skills = extract_jd_skills_locally(jd["full_text"])
 
         # ── Step 6: Fetch user's bullet library (no API) ─────────────────────
         library_bullets = get_user_library_bullets(user_id)
