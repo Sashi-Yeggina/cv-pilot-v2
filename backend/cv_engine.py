@@ -36,7 +36,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+# Lazy client — created on first API call, not at import time
+_anthropic_client = None
+
+def get_anthropic_client():
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    return _anthropic_client
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PRICING  (USD per 1 M tokens)
@@ -177,7 +184,7 @@ def parse_jd(jd_text: str, model: str = DEFAULT_MODEL) -> dict:
     Returns: { "result": {...}, "input_tokens": n, "output_tokens": n, "cost_usd": n }
     """
     try:
-        response = client.messages.create(
+        response = get_anthropic_client().messages.create(
             model=model,
             max_tokens=1500,
             messages=[{"role": "user", "content": f"""Analyze this job description and extract structured information.
@@ -223,7 +230,7 @@ def score_cvs(cv_texts: list, jd: dict, model: str = DEFAULT_MODEL) -> dict:
             f"Required Skills: {', '.join(jd.get('required_skills', []))}\n"
             f"Cloud: {jd.get('cloud_platform')}"
         )
-        response = client.messages.create(
+        response = get_anthropic_client().messages.create(
             model=model,
             max_tokens=2000,
             messages=[{"role": "user", "content": f"""Score each CV against the job requirements.
@@ -278,7 +285,7 @@ def fill_gap_bullets(
     cloud    = jd_profile.get("cloud_platform", "AWS")
 
     try:
-        response = client.messages.create(
+        response = get_anthropic_client().messages.create(
             model=model,
             max_tokens=900,
             messages=[{"role": "user", "content": f"""The candidate has a CV for a {role} role.
@@ -350,7 +357,7 @@ def enhance_cv(cv_text: str, jd_text: str, jd_profile: dict, model: str = DEFAUL
                 return {"result": _default_enhance(), "input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
         else:
             # Route to Claude (existing behavior)
-            response = client.messages.create(
+            response = get_anthropic_client().messages.create(
                 model=model,
                 max_tokens=2500,
                 messages=[{"role": "user", "content": f"""You are an expert CV writer. Enhance this CV to match the job requirements.
@@ -402,7 +409,7 @@ def extract_cv_info(cv_text: str, model: str = DEFAULT_MODEL) -> dict:
     Returns: { "result": {...}, "input_tokens": n, "output_tokens": n, "cost_usd": n }
     """
     try:
-        response = client.messages.create(
+        response = get_anthropic_client().messages.create(
             model=model,
             max_tokens=500,
             messages=[{"role": "user", "content": f"""Extract key information from this CV.
