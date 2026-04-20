@@ -278,8 +278,12 @@ async def upload_cv_file(
         _user_model = get_user_model(user_id, default=DEFAULT_MODEL)
         cv_info = extract_cv_info(cv_text, model=_user_model)["result"]
 
-        # Upload to storage
-        file_path = f"{user_id}/{file.filename}"
+        # Upload to storage — add timestamp suffix to avoid conflicts with existing files
+        from uuid import uuid4 as _uuid4
+        import os as _os
+        name, ext = _os.path.splitext(file.filename)
+        unique_filename = f"{name}_{int(datetime.utcnow().timestamp())}{ext}"
+        file_path = f"{user_id}/{unique_filename}"
         storage_path = upload_cv(user_id, bucket, file_path, contents)
 
         if not storage_path:

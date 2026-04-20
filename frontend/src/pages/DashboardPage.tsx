@@ -184,6 +184,17 @@ export default function DashboardPage() {
     setUploadingFile(false);
   };
 
+  const handleDeleteCV = async (cvId: string, filename: string) => {
+    if (!confirm(`Delete "${filename}"? This cannot be undone.`)) return;
+    try {
+      await cvAPI.delete(cvId);
+      toast.success(`${filename} deleted`);
+      loadCVs();
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Delete failed');
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -274,9 +285,16 @@ export default function DashboardPage() {
                 <p className="text-gray-500">No base CVs yet</p>
               ) : (
                 baseCVs.map(cv => (
-                  <div key={cv.id} className="p-3 bg-blue-50 rounded border border-blue-200">
-                    <p className="font-medium text-sm">{cv.filename}</p>
-                    <p className="text-xs text-gray-600">{cv.role_title || 'No title'}</p>
+                  <div key={cv.id} className="p-3 bg-blue-50 rounded border border-blue-200 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{cv.filename}</p>
+                      <p className="text-xs text-gray-600">{cv.role_title || 'No title'}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteCV(cv.id, cv.filename)}
+                      className="text-red-400 hover:text-red-600 text-lg leading-none flex-shrink-0 mt-0.5"
+                      title="Delete"
+                    >×</button>
                   </div>
                 ))
               )}
@@ -291,8 +309,16 @@ export default function DashboardPage() {
                 <p className="text-gray-500">No template set</p>
               ) : (
                 templates.map(cv => (
-                  <div key={cv.id} className="p-3 bg-green-50 rounded border border-green-200">
-                    <p className="font-medium text-sm">{cv.filename}</p>
+                  <div key={cv.id} className="p-3 bg-green-50 rounded border border-green-200 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{cv.filename}</p>
+                      <p className="text-xs text-gray-500">Template</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteCV(cv.id, cv.filename)}
+                      className="text-red-400 hover:text-red-600 text-lg leading-none flex-shrink-0 mt-0.5"
+                      title="Delete"
+                    >×</button>
                   </div>
                 ))
               )}
@@ -307,9 +333,16 @@ export default function DashboardPage() {
                 <p className="text-gray-500">No generated CVs yet</p>
               ) : (
                 generatedCVs.map(cv => (
-                  <div key={cv.id} className="p-3 bg-purple-50 rounded border border-purple-200">
-                    <p className="font-medium text-sm">{cv.filename}</p>
-                    <p className="text-xs text-gray-600">{cv.created_at?.split('T')[0]}</p>
+                  <div key={cv.id} className="p-3 bg-purple-50 rounded border border-purple-200 flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{cv.filename}</p>
+                      <p className="text-xs text-gray-600">{cv.created_at?.split('T')[0]}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteCV(cv.id, cv.filename)}
+                      className="text-red-400 hover:text-red-600 text-lg leading-none flex-shrink-0 mt-0.5"
+                      title="Delete"
+                    >×</button>
                   </div>
                 ))
               )}
